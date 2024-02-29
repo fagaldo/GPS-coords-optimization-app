@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">GPSTracking</string>
+    <string name="title_activity_maps">MapsActivity</string>
+    <string name="MAPS_API_KEY">AIzaSyDjz9DNYG-G6w2teu95VxuyfkjrKUdrZCw</string>
+</resources>
