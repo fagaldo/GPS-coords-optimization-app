@@ -1,12 +1,18 @@
 package polsl.gps.gpsoptimization
 
+import android.content.Context
 import android.content.SharedPreferences
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.media.MediaCodec.MetricsConstants.MODE
 
 import android.os.Bundle
 import android.os.Parcel
 import android.os.Parcelable
+import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ListView
@@ -15,8 +21,11 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.gson.*
 import com.google.gson.annotations.JsonAdapter
 import com.google.gson.reflect.TypeToken
+import java.io.File
+import java.io.FileOutputStream
 import java.lang.reflect.Type
 import java.util.*
+import kotlin.math.pow
 
 
 class ShowSavedLocationsList : AppCompatActivity() {
@@ -24,7 +33,9 @@ class ShowSavedLocationsList : AppCompatActivity() {
     lateinit var saveBtn: Button
     lateinit var deleteBtn: Button
     private var printList: ArrayList<String> = ArrayList()
-    private var savedLocations: ArrayList<Location> = ArrayList()
+    private var savedLocations: ArrayList<MyLocation> = ArrayList()
+    private lateinit var accelerometerSensor: Sensor
+    private lateinit var sensorManager: SensorManager
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_show_saved_locations_list)
@@ -40,11 +51,15 @@ class ShowSavedLocationsList : AppCompatActivity() {
         val application = applicationContext as Application
         savedLocations = application.getLocations()
         for(location in savedLocations)
-            printList.add("Latitude:" + location.latitude.toString() + " Longtitude:" +
-                    location.longitude.toString() + " Speed:" + location.speed.toString()
-                    + " Accuracy:" + location.accuracy.toString())
+            printList.add("Latitude:" + location.latitude.toString() + " Longitude:" +
+                    location.longitude.toString() + " Accuracy:" + location.accuracy.toString() +
+                    " SX:" + location.velocityX + " SY:" + location.velocityY + " Time:" + location.time
+                    )
+
         lv_savedLocations.adapter =
             ArrayAdapter(this, android.R.layout.simple_list_item_1, printList)
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         }
 
     private fun saveData() {
@@ -55,8 +70,18 @@ class ShowSavedLocationsList : AppCompatActivity() {
         var json = gson.toJson(printList, type)
         sharedPreferencesEdit.putString("waypoints", json)
         sharedPreferencesEdit.apply()
+        val outputString = StringBuilder()
+        for((j, i) in printList.withIndex())
+        {
+            outputString.append("Point $j:" + printList[j] + "\n")
+        }
+        val file = File(this.getExternalFilesDir(null), "original_location_info.txt")
+        FileOutputStream(file).use {
+            it.write(outputString.toString().toByteArray())
+        }
         Toast.makeText(this, "Waypoints were saved", Toast.LENGTH_SHORT).show()
     }
+
 
     /*private fun loadData(){
         val sharedPreferences: SharedPreferences = getSharedPreferences("waypoints", MODE_PRIVATE)
@@ -80,18 +105,6 @@ class ShowSavedLocationsList : AppCompatActivity() {
         application.setLocations(savedLocations)
         Toast.makeText(this, "Waypoints were deleted", Toast.LENGTH_SHORT).show()
     }
-
-    private class TimeSerialize : JsonSerializer<Location>{
-        override fun serialize(
-            src: Location?,
-            typeOfSrc: Type?,
-            context: JsonSerializationContext?
-        ): JsonElement {
-            return JsonPrimitive(src.toString())
-        }
-    }
-
-
 
 }
 

@@ -1,14 +1,14 @@
 package polsl.gps.gpsoptimization
 
 import android.content.SharedPreferences
-import android.location.Location
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import java.util.*
+import kotlin.collections.ArrayList
 
 
 class Application : android.app.Application() {
-    private lateinit var locations: ArrayList<Location>
+    private lateinit var locations: ArrayList<MyLocation>
     private lateinit var locationsStrings: ArrayList<String>
     override fun onCreate() {
         super.onCreate()
@@ -16,10 +16,10 @@ class Application : android.app.Application() {
         locations = ArrayList()
         loadData()
     }
-    fun getLocations():ArrayList<Location>{
+    fun getLocations():ArrayList<MyLocation>{
         return this.locations
     }
-    fun setLocations(locations: ArrayList<Location>)
+    fun setLocations(locations: ArrayList<MyLocation>)
     {
         this.locations = locations
     }
@@ -36,37 +36,50 @@ class Application : android.app.Application() {
 
     }
 
-    private fun parseStringToLoc(input: String): Location{
+    private fun parseStringToLoc(input: String): MyLocation{
         val parts = input.split(" ")
-
         var latitude: Double? = null
         var longitude: Double? = null
-        var speed: Double? = null
         var accuracy: Double? = null
-        var location: Location = Location("saved")
+        var x: Double? = null
+        var y: Double? = null
+        var time: Long? = null
+        var location: MyLocation = MyLocation("saved")
         for (part in parts) {
             if (part.startsWith("Latitude:")) {
                 latitude = part.substringAfter("Latitude:").toDoubleOrNull()
-            } else if (part.startsWith("Longtitude:")) { // Tutaj użyto "Longtitude" zamiast "Longitude" w danych wejściowych
-                longitude = part.substringAfter("Longtitude:").toDoubleOrNull()
-            } else if (part.startsWith("Speed:")) {
-                speed = part.substringAfter("Speed:").toDoubleOrNull()
+            } else if (part.startsWith("Longitude:")) { // Tutaj użyto "Longtitude" zamiast "Longitude" w danych wejściowych
+                longitude = part.substringAfter("Longitude:").toDoubleOrNull()
             } else if (part.startsWith("Accuracy:")) {
                 accuracy = part.substringAfter("Accuracy:").toDoubleOrNull()
             }
+            else if (part.startsWith("SX:")) {
+                x = part.substringAfter("X:").toDoubleOrNull()
+            }
+            else if (part.startsWith("SY:")) {
+                y = part.substringAfter("Y:").toDoubleOrNull()
+            }
+            else if (part.startsWith("Time:")) {
+                time = part.substringAfter("Time:").toLongOrNull()
+            }
         }
-        if (latitude != null && longitude != null && speed != null && accuracy != null) {
+        if (latitude != null && longitude != null && accuracy != null && x != null && y != null && time != null) {
 
             println("Latitude: $latitude")
             location.latitude = latitude
             println("Longitude: $longitude")
             location.longitude = longitude
-            println("Speed: $speed")
-            location.speed = speed.toFloat()
             println("Accuracy: $accuracy")
             location.accuracy = accuracy.toFloat()
+            Log.d("speed x", "$x")
+            location.velocityX = x
+            Log.d("speed y", "$y")
+            location.velocityY = y
+            location.time = time
             println(location)
+
         }
+        //Log.d("Zwracam lokacje", location.toString())
         return location
     }
 

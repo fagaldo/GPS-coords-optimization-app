@@ -1,12 +1,18 @@
 package polsl.gps.gpsoptimization
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Geocoder
 import android.location.Location
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.*
 import androidx.annotation.RequiresApi
@@ -17,27 +23,32 @@ import java.util.*
 
 
 class MainActivity : AppCompatActivity() {
-    lateinit var tv_lat: TextView
-    lateinit var tv_lon: TextView
-    lateinit var tv_altitude: TextView
-    lateinit var tv_accuracy: TextView
-    lateinit var tv_speed: TextView
-    lateinit var tv_sensor: TextView
-    lateinit var tv_updates: TextView
-    lateinit var tv_address: TextView
-    lateinit var tv_wayptsCount: TextView
-    lateinit var btn_newWayPoint: Button
-    lateinit var btn_showWaypoints: Button
-    lateinit var btn_showMap: Button
-    lateinit var sw_locationsupdates: Switch
-    lateinit var sw_gps: Switch
-    lateinit var spinner: Spinner
+    private lateinit var tv_lat: TextView
+    private lateinit var tv_lon: TextView
+    private lateinit var tv_altitude: TextView
+    private lateinit var tv_accuracy: TextView
+    private lateinit var tv_speed: TextView
+    private lateinit var tv_sensor: TextView
+    private lateinit var tv_updates: TextView
+    private lateinit var tv_address: TextView
+    private lateinit var tv_wayptsCount: TextView
+    private lateinit var btn_newWayPoint: Button
+    private lateinit var btn_showWaypoints: Button
+    private lateinit var btn_showMap: Button
+    private lateinit var sw_locationsupdates: Switch
+    private lateinit var sw_gps: Switch
+    private lateinit var spinner: Spinner
+    private var x= 0.0
+    private var y = 0.0
+    private lateinit var accelerometerSensor: Sensor
+    private lateinit var sensorManager: SensorManager
     var updateOn = true
 
     //current location
-    lateinit var currLocation: Location
+    private lateinit var currLocation: Location
+    private lateinit var myCurrLocation: MyLocation
     //list of savec locations
-    lateinit var savedLocations: MutableList<Location>
+    private lateinit var savedLocations: MutableList<MyLocation>
 
     //Google's API for location services. Hearth and sould of the app
     private var fusedLocationProviderClient: FusedLocationProviderClient? = null
@@ -66,6 +77,9 @@ class MainActivity : AppCompatActivity() {
         tv_wayptsCount = findViewById(R.id.tv_wayPointsCount)
         btn_showMap = findViewById(R.id.btn_showMap)
         spinner = findViewById(R.id.spinner_smoothing_algorithm)
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
         val adapter: ArrayAdapter<CharSequence> = ArrayAdapter.createFromResource(
             this,
             R.array.smoothing_algorithms,
@@ -85,8 +99,7 @@ class MainActivity : AppCompatActivity() {
                 locationResult.lastLocation?.let { updateUIValues(it) }
             }
         }
-        locationRequest = LocationRequest.Builder(100)
-            .setIntervalMillis((100 * DEFAULT_FAST_UPDATE_INTERVAL).toLong()) // Interwał aktualizacji lokalizacji w milisekundach (np. co 10 sekund)
+        locationRequest = LocationRequest.Builder(10)
             .setMinUpdateDistanceMeters(0F) // Najkrótszy dopuszczalny interwał aktualizacji lokalizacji (np. co 5 sekund)
             .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY) // Priorytet lokalizacji (wysoka dokładność)
             .build()
@@ -95,7 +108,7 @@ class MainActivity : AppCompatActivity() {
             if (sw_gps.isChecked()) {
                 //most accurate - use GPS
                 locationRequest =
-                    LocationRequest.Builder(100).setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                    LocationRequest.Builder(10).setPriority(Priority.PRIORITY_HIGH_ACCURACY)
                         .build()
                 tv_sensor.setText("High accuracy")
             } else {
@@ -121,8 +134,10 @@ class MainActivity : AppCompatActivity() {
 
             val application = applicationContext as polsl.gps.gpsoptimization.Application
             //savedLocations = application.getLocations()
-            savedLocations.add(currLocation)
-            application.setLocations(savedLocations as ArrayList<Location>)
+
+            savedLocations.add(myCurrLocation)
+            Log.d("Accuracy dodanego ", myCurrLocation.accuracy.toString())
+            application.setLocations(savedLocations as ArrayList<MyLocation>)
             updateGPS()
         })
         btn_showWaypoints.setOnClickListener(View.OnClickListener {
@@ -135,11 +150,30 @@ class MainActivity : AppCompatActivity() {
             i.putExtra("selectedAlgorithm", selectedAlgorithm)
             startActivity(i)
         })
+
         startLocationUpdates()
+    }
+    override fun onResume() {
+        super.onResume()
+        sensorManager.registerListener(accelerometerListener, accelerometerSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH, SensorManager.SENSOR_DELAY_FASTEST)
+    }
+    private val accelerometerListener = object : SensorEventListener{
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                x = event.values[0].toDouble()
+                y = event.values[1].toDouble()
+                //Log.d("Przyspieszenia","Przyspieszenie x: $x przypiszenie y: $y, przyspieszenie z: $z")
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+            // Metoda wywoływana, gdy dokładność sensora ulegnie zmianie
+        }
     }
 
     private fun startLocationUpdates() {
         try {
+            sensorManager.registerListener(accelerometerListener, accelerometerSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH, SensorManager.SENSOR_DELAY_FASTEST)
             fusedLocationProviderClient?.requestLocationUpdates(locationRequest, locationCallBack, null)
 
         } catch (e: SecurityException) {
@@ -196,10 +230,17 @@ class MainActivity : AppCompatActivity() {
             fusedLocationProviderClient!!.lastLocation
                 .addOnSuccessListener {
                     fun onSuccess(location: Location) {
-                        tv_updates!!.text = "Location in being tracked"
+                        tv_updates!!.text = "Location is being tracked"
                         currLocation = location
+                        myCurrLocation = MyLocation("")
+                        myCurrLocation.accuracy = currLocation.accuracy
+                        myCurrLocation.altitude = currLocation.altitude
+                        myCurrLocation.time = currLocation.time
+                        myCurrLocation.latitude = currLocation.latitude
+                        myCurrLocation.longitude = currLocation.longitude
+                        myCurrLocation.velocityX = x
+                        myCurrLocation.velocityY = y
                         //we got permission. Put the values of location. XXX into the UI components.
-
                         updateUIValues(location)
                     }
                     onSuccess(it)
@@ -226,8 +267,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             tv_altitude!!.text = "Not available on this device"
         }
-        if (location.hasSpeed()) {
-            tv_speed!!.text = location.speed.toString()
+        if (myCurrLocation.velocityX != null) {
+            tv_speed!!.text = "x: " + myCurrLocation.velocityX.toString() + "y: " + myCurrLocation.velocityY.toString()
         } else {
             tv_speed!!.text = "Not available on this device"
         }
