@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources><string-array name="smoothing_algorithms">
-    <item>LOESS</item>
+    <item>LOWESS</item>
     <item>Moving Average</item>
+    <item>Kalman Filter</item>
 </string-array></resources>

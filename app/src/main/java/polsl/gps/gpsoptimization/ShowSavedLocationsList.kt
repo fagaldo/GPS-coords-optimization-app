@@ -82,16 +82,6 @@ class ShowSavedLocationsList : AppCompatActivity() {
         Toast.makeText(this, "Waypoints were saved", Toast.LENGTH_SHORT).show()
     }
 
-
-    /*private fun loadData(){
-        val sharedPreferences: SharedPreferences = getSharedPreferences("waypoints", MODE_PRIVATE)
-        val json = sharedPreferences.getString("waypoints", "{}")
-        val type = object : TypeToken<ArrayList<String>>() {}.type
-        printList = Gson()?.fromJson(json, type)
-        if(printList == null)
-            printList = ArrayList()
-    }*/
-
     private fun deleteData(){
         var sharedPreferences: SharedPreferences = getSharedPreferences("waypoints", MODE_PRIVATE)
         var sharedPreferencesEdit: SharedPreferences.Editor = sharedPreferences.edit()

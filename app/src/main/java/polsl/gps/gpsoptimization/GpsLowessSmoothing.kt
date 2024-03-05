@@ -16,9 +16,10 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup(threshold: Double) {
         //val windowSize = calculateWindowSize(latitudes, longitudes)
+        createWindows(latitudes, longitudes, threshold, windowIndexMap)
         for (i in latitudes.indices) {
-            val windows = createWindows(latitudes, longitudes, threshold, windowIndexMap)
-            Log.d("WINDOWS SIZES", " $windows indeksy: $windowIndexMap")
+
+            //Log.d("WINDOWS SIZES", " $windows indeksy: $windowIndexMap")
 
             val smoothedCoordinate = loessSmooth(i, windowIndexMap)
             smoothedLatitudes[i] = smoothedCoordinate.first
@@ -31,8 +32,8 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
             if (groupId != null) {
                 groups.computeIfAbsent(groupId) { mutableListOf() }.add(i)
             }
-            Log.d("GRUPY", groups.toString())
         }
+        Log.d("GRUPY", groups.toString())
     }
     private fun createWindows(latitudes: DoubleArray, longitudes: DoubleArray, threshold: Double, windowIndexMap: MutableMap<Int, Int>): List<Int>{
         val windows = mutableListOf<Int>()
@@ -151,11 +152,15 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
     }
     private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
 
-        Log.d("Index", index.toString())
-        val trueLatitude = trueLatitudes[index!!]
-        val trueLongitude = trueLongitudes[index!!]
-
-        return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
+        if (index != null && index >= 0 && index < trueLatitudes.size && index < trueLongitudes.size) {
+            val trueLatitude = trueLatitudes[index]
+            val trueLongitude = trueLongitudes[index]
+            return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
+        } else {
+            Log.d("Index", "Invalid index: $index")
+            // Możesz zwrócić wartość domyślną lub NaN lub wykonać inne działania w przypadku błędnego indeksu
+            return Double.NaN // NaN oznacza "Not a Number"
+        }
     }
     fun getGroups(): Map<Int, List<Int>> {
         return groups

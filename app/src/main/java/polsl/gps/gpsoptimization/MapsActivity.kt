@@ -1,5 +1,4 @@
 package polsl.gps.gpsoptimization
-import android.location.Location
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -23,6 +22,8 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
     private var smoothedLatLngList: List<LatLng>? = null
     private var latitudes: MutableList<Double> = arrayListOf()
     private var longitudes: MutableList<Double> = arrayListOf()
+    private var accX: MutableList<Double> = arrayListOf()
+    private var accY: MutableList<Double> = arrayListOf()
     private var selectedAlgorithm: String? = null
     private lateinit var groups: Map<Int, List<Int>>
     private lateinit var mae: DoubleArray
@@ -63,16 +64,18 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         for (location in savedLocations!!){
             latitudes.add(location.latitude)
             longitudes.add(location.longitude)
+            location.velocityX?.let { accX.add(it) }
+            location.velocityY?.let { accY.add(it) }
         }
         mMap = googleMap
         trueLats[0] = 50.13489
-        trueLats[1] = 50.12968
-        trueLats[2] = 50.29099
-        trueLats[3] = 50.136036378069974
+        //trueLats[1] = 50.12968
+        //trueLats[2] = 50.29099
+        //trueLats[3] = 50.136036378069974
         trueLongs[0] = 19.43183
-        trueLongs[1] = 19.43375
-        trueLongs[2] = 18.67301
-        trueLongs[3] = 19.435716129309384
+        //trueLongs[1] = 19.43375
+        //trueLongs[2] = 18.67301
+        //trueLongs[3] = 19.435716129309384
 
         if(selectedAlgorithm == "LOESS") {
             val gpsLowess = GpsLowessSmoothing(
@@ -87,7 +90,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             groups = gpsLowess.getGroups()
             mae = gpsLowess.getMAE()
         }
-        else
+        else if(selectedAlgorithm == "Moving Average")
         {
             val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
                 longitudes.toDoubleArray(),
@@ -98,6 +101,20 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             smoothedLatLngList = gpsMA.getSmoothedLatLngList()
             groups = gpsMA.getGroups()
             mae = gpsMA.getMAE()
+        }
+        else
+        {
+            val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
+            longitudes.toDoubleArray(),
+            accX,
+            accY,
+            0.001,
+            trueLats,
+            trueLongs)
+            gpsKF.applyPostProcessingAndGroup()
+            smoothedLatLngList=gpsKF.getCorrectedLatLngList()
+            groups = gpsKF.getGroups()
+            mae = gpsKF.getMAE()
         }
         for ((index, latLng) in smoothedLatLngList?.withIndex()!!) {
             val groupId = getGroupIdForPoint(index, groups)

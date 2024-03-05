@@ -108,10 +108,15 @@ class GpsMovingAvgSmoothing(
 
 
     private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
-        Log.d("Index", index.toString())
-        val trueLatitude = trueLatitudes[index!!]
-        val trueLongitude = trueLongitudes[index!!]
-        return abs(smoothedLatitude - trueLatitude) + abs(smoothedLongitude - trueLongitude)
+        if (index != null && index >= 0 && index < trueLatitudes.size && index < trueLongitudes.size) {
+            val trueLatitude = trueLatitudes[index]
+            val trueLongitude = trueLongitudes[index]
+            return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
+        } else {
+            Log.d("Index", "Invalid index: $index")
+            // Możesz zwrócić wartość domyślną lub NaN lub wykonać inne działania w przypadku błędnego indeksu
+            return Double.NaN // NaN oznacza "Not a Number"
+        }
     }
     fun getMAE(): DoubleArray {
         return errors

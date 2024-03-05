@@ -162,10 +162,11 @@ class MainActivity : AppCompatActivity() {
             if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
                 x = event.values[0].toDouble()
                 y = event.values[1].toDouble()
+                if(updateOn)
+                    updateGPS()
                 //Log.d("Przyspieszenia","Przyspieszenie x: $x przypiszenie y: $y, przyspieszenie z: $z")
             }
         }
-
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             // Metoda wywoływana, gdy dokładność sensora ulegnie zmianie
         }
