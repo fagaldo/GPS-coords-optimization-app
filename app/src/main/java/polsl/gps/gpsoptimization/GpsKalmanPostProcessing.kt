@@ -109,14 +109,6 @@ class GpsKalmanPostProcessing(
         val lonDiff = Math.abs(lon1 - lon2)
         return latDiff < threshold && lonDiff < threshold
     }
-    private fun isGrouped(index: Int): Boolean {
-        groups.values.forEach { groupIndices ->
-            if (index in groupIndices) {
-                return true
-            }
-        }
-        return false
-    }
     private fun assignToGroup(index: Int, groupIndices: MutableList<Int>){
         for (i in latitudes.indices) {
             if (isNearby(latitudes[index], longitudes[index], latitudes[i], longitudes[i])) {

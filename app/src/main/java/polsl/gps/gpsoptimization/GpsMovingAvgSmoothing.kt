@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.pow
 
 class GpsMovingAvgSmoothing(
     private val latitudes: DoubleArray,

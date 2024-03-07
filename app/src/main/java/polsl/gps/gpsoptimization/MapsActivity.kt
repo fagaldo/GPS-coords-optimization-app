@@ -1,4 +1,5 @@
 package polsl.gps.gpsoptimization
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -77,7 +78,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         //trueLongs[2] = 18.67301
         //trueLongs[3] = 19.435716129309384
 
-        if(selectedAlgorithm == "LOESS") {
+        if(selectedAlgorithm == "LOWESS") {
             val gpsLowess = GpsLowessSmoothing(
                 latitudes.toDoubleArray(),
                 longitudes.toDoubleArray(),
@@ -85,12 +86,12 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                 trueLats,
                 trueLongs
             )
-            gpsLowess.smoothAndEvaluateAndGroup(0.001)
+            gpsLowess.smoothAndEvaluateAndGroup(0.000089)
             smoothedLatLngList = gpsLowess.getSmoothedLatLngList()
             groups = gpsLowess.getGroups()
             mae = gpsLowess.getMAE()
         }
-        else if(selectedAlgorithm == "Moving Average")
+        else if(selectedAlgorithm == "Simple MA")
         {
             val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
                 longitudes.toDoubleArray(),
@@ -102,7 +103,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             groups = gpsMA.getGroups()
             mae = gpsMA.getMAE()
         }
-        else
+        else if(selectedAlgorithm == "Kalman Filter")
         {
             val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
             longitudes.toDoubleArray(),
@@ -115,6 +116,18 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             smoothedLatLngList=gpsKF.getCorrectedLatLngList()
             groups = gpsKF.getGroups()
             mae = gpsKF.getMAE()
+        }
+        else
+        {
+            val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
+                longitudes.toDoubleArray(),
+                0.001,
+                trueLats,
+                trueLongs)
+            gpsMA.smoothAndEvaluateAndGroup()
+            smoothedLatLngList = gpsMA.getSmoothedLatLngList()
+            groups = gpsMA.getGroups()
+            mae = gpsMA.getMAE()
         }
         for ((index, latLng) in smoothedLatLngList?.withIndex()!!) {
             val groupId = getGroupIdForPoint(index, groups)
@@ -152,6 +165,16 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         FileOutputStream(file).use {
             it.write(outputString.toString().toByteArray())
         }
+        connectPoints()
+        ///TMP to poniżej
+        val polylineOptions = PolylineOptions()
+        for (index in smoothedLatLngList!!)
+        {
+            polylineOptions.add(index)
+            polylineOptions.color(Color.BLUE)
+            polylineOptions.width(5f)
+        }
+        mMap!!.addPolyline(polylineOptions)
 
     }
     private fun getGroupIdForPoint(pointIndex: Int, groups: Map<Int, List<Int>>): Int {
@@ -163,6 +186,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         val maxMae = 0.1 // Maksymalna wartość MAE dla maksymalnego koloru
         val minMae = 0.0 // Minimalna wartość MAE dla minimalnego koloru
         val hue = (mae.coerceIn(minMae, maxMae) / maxMae) * 120 // Wartości do 120, aby ograniczyć zakres kolorów
+        if (hue < 0 || hue > 360 || hue == Double.NaN)   return 0.0f
         return hue.toFloat()
     }
     private fun getLatLngBounds(latLngList: List<LatLng>): LatLngBounds {
@@ -171,5 +195,27 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             builder.include(latLng)
         }
         return builder.build()
+    }
+    private fun connectPoints() {
+        for (i in 0 until (smoothedLatLngList?.size ?: -1) ) {
+            for ((groupId, groupPoints) in groups) {
+                val origPoints = mutableListOf<LatLng>()
+                val polylineOptions = PolylineOptions()
+                val polylineOptions2 = PolylineOptions()
+                for (pointIndex in groupPoints){
+                    polylineOptions.add(smoothedLatLngList?.get(pointIndex))
+                    origPoints.add(LatLng(latitudes[pointIndex], longitudes[pointIndex]))
+                    val idx = origPoints.size - 1
+                    polylineOptions2.add(origPoints[idx])
+                    polylineOptions.color(Color.BLUE)
+                    polylineOptions2.color(Color.YELLOW)
+                    polylineOptions.width(5f)
+                    polylineOptions2.width(5f)
+                }
+                mMap!!.addPolyline(polylineOptions)
+                mMap!!.addPolyline(polylineOptions2)
+            }
+        }
+
     }
 }

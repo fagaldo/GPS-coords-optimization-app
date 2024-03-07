@@ -19,7 +19,7 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         createWindows(latitudes, longitudes, threshold, windowIndexMap)
         for (i in latitudes.indices) {
 
-            //Log.d("WINDOWS SIZES", " $windows indeksy: $windowIndexMap")
+            Log.d("WINDOWS SIZES", " indeksy: $windowIndexMap")
 
             val smoothedCoordinate = loessSmooth(i, windowIndexMap)
             smoothedLatitudes[i] = smoothedCoordinate.first

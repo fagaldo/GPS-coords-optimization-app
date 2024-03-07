@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources><string-array name="smoothing_algorithms">
     <item>LOWESS</item>
-    <item>Moving Average</item>
+    <item>Simple MA</item>
     <item>Kalman Filter</item>
+    <item>MA with Fuzzy logic</item>
 </string-array></resources>
