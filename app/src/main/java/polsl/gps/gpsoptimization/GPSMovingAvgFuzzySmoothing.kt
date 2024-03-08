@@ -4,9 +4,7 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.pow
+import kotlin.math.*
 
 class GPSMovingAvgFuzzySmoothing(
     private val latitudes: DoubleArray,
@@ -91,12 +89,12 @@ class GPSMovingAvgFuzzySmoothing(
         return latDiff < threshold && lonDiff < threshold
     }
     private fun membershipFunction(x: Double, y: Double, s: Double, r: Double, a: Double, b: Double): Double {
-        return exp(-((x - s) / 0.01*a).pow(2) - ((y - r) / 0.01*b).pow(2)) //tutaj można się pobawić z tymi wagami
-        //val distanceX = abs(x - s)
-       // val distanceY = abs(y - r)
-        //val weightX = exp(-(distanceX / a).pow(2))
-        //val weightY = exp(-(distanceY / b).pow(2))
-        //return weightX * weightY
+        //return exp(-((x - s) / 0.01*a).pow(2) - ((y - r) / 0.01*b).pow(2)) //tutaj można się pobawić z tymi wagami
+        val distanceX = abs(x - s)
+        val distanceY = abs(y - r)
+        val weightX = exp(-(distanceX / a).pow(2))
+        val weightY = exp(-(distanceY / b).pow(2)) //TODO ciekawostka
+        return weightX * weightY
     }
     private fun calculateMedianCenter(groupId: Int): LatLng {
         val groupIndices = groupIndexMap.filter { it.value == groupId }.keys.toList()
@@ -120,7 +118,7 @@ class GPSMovingAvgFuzzySmoothing(
         var maxDistanceLon = 0.0
 
         for (index in groupIndices) {
-            val distance = calculateDistance(latitudes[index], longitudes[index], median.latitude, median.longitude)
+            val distance = calculateDistance(latitudes[index], median.latitude, longitudes[index], median.longitude)
             if (distance.first > maxDistanceLat) {
                 maxDistanceLat = distance.first
             }
@@ -130,23 +128,23 @@ class GPSMovingAvgFuzzySmoothing(
         }
         return Pair(maxDistanceLat, maxDistanceLon)
     }
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Pair<Double, Double> {
-        val earthRadiusKm = 6371.0 // Promień Ziemi w kilometrach
-        val metersInKm = 1000.0
-        val cmInMeter = 100.0
+    private fun calculateDistance(lat1: Double, lat2: Double, lon1: Double, lon2:Double): Pair<Double, Double> {
+        val earthRadius = 6371000.0 // Radius of the Earth in meters
 
-        val latDistance = Math.toRadians(lat2 - lat1)
-        val lonDistance = Math.toRadians(lon2 - lon1)
+        val dLat = abs(lat2 - lat1)
+        val dLon = abs(lon2 - lon1)
 
-        val latDistanceM = earthRadiusKm * metersInKm * latDistance
-        val lonDistanceM = earthRadiusKm * metersInKm * lonDistance * Math.cos(Math.toRadians(lat1))
+        //val a = sin(dLat / 2).pow(2) + cos(lat1) * cos(lat2) * sin(dLon / 2).pow(2)
+        //val c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
-        val latDistanceCm = latDistanceM * cmInMeter
-        val lonDistanceCm = lonDistanceM * cmInMeter
+        //val distance = earthRadius * c * 100 // Convert distance to centimeters
 
-        return Pair(latDistanceCm, lonDistanceCm)
+        //val latDistance = distance * cos(lat1) // Distance on latitude in centimeters
+        //val lonDistance = distance // Distance on longitude in centimeters
+        Log.d("zwracam odległość", "$dLat $dLon")
+        return Pair(dLat, dLon)
+
     }
-
     private fun movingFuzzyAverage(index: Int, windowIndexMap: MutableMap<Int, Int>): Pair<Double, Double>{
         var sumLat = 0.0
         var sumLon = 0.0
@@ -156,9 +154,12 @@ class GPSMovingAvgFuzzySmoothing(
         for ((i, group) in windowIndexMap) {
             if (group == groupToIterate) {
                 val sr = calculateMedianCenter(group)
+                Log.d("mediana", sr.latitude.toString() + " " + sr.longitude.toString())
                 val ab = calculateOutlierDistanceForGroup(group, sr)
+                Log.d("outlier", ab.first.toString() + " " + ab.second.toString())
                 val weight = membershipFunction(latitudes[i], longitudes[i], sr.latitude, sr.longitude, ab.first, ab.second) // Domyślne wartości a i b
-                Log.d("Obliczone wagi dla ele", weight.toString() + group.toString())
+                Log.d("Obliczone wagi dla ele ", weight.toString() + " element " + index + "grupa" + group)
+                Log.d("Koordynaty tego elemu: ", latitudes[i].toString() + " " + longitudes[i].toString())
                 sumLat += weight * latitudes[i]
                 sumLon += weight * longitudes[i]
                 weightSum += weight

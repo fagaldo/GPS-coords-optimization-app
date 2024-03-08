@@ -28,8 +28,8 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
     private var selectedAlgorithm: String? = null
     private lateinit var groups: Map<Int, List<Int>>
     private lateinit var mae: DoubleArray
-    var trueLats = DoubleArray(4)
-    var trueLongs = DoubleArray(4)
+    var trueLats = DoubleArray(100)
+    var trueLongs = DoubleArray(100)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,56 +78,55 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         //trueLongs[2] = 18.67301
         //trueLongs[3] = 19.435716129309384
 
-        if(selectedAlgorithm == "LOWESS") {
-            val gpsLowess = GpsLowessSmoothing(
-                latitudes.toDoubleArray(),
-                longitudes.toDoubleArray(),
-                0.005,
-                trueLats,
-                trueLongs
-            )
-            gpsLowess.smoothAndEvaluateAndGroup(0.000089)
-            smoothedLatLngList = gpsLowess.getSmoothedLatLngList()
-            groups = gpsLowess.getGroups()
-            mae = gpsLowess.getMAE()
-        }
-        else if(selectedAlgorithm == "Simple MA")
-        {
-            val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
-                longitudes.toDoubleArray(),
-                0.001,
-                trueLats,
-                trueLongs)
-            gpsMA.smoothAndEvaluateAndGroup()
-            smoothedLatLngList = gpsMA.getSmoothedLatLngList()
-            groups = gpsMA.getGroups()
-            mae = gpsMA.getMAE()
-        }
-        else if(selectedAlgorithm == "Kalman Filter")
-        {
-            val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
-            longitudes.toDoubleArray(),
-            accX,
-            accY,
-            0.001,
-            trueLats,
-            trueLongs)
-            gpsKF.applyPostProcessingAndGroup()
-            smoothedLatLngList=gpsKF.getCorrectedLatLngList()
-            groups = gpsKF.getGroups()
-            mae = gpsKF.getMAE()
-        }
-        else
-        {
-            val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
-                longitudes.toDoubleArray(),
-                0.001,
-                trueLats,
-                trueLongs)
-            gpsMA.smoothAndEvaluateAndGroup()
-            smoothedLatLngList = gpsMA.getSmoothedLatLngList()
-            groups = gpsMA.getGroups()
-            mae = gpsMA.getMAE()
+        when (selectedAlgorithm) {
+            "LOWESS" -> {
+                val gpsLowess = GpsLowessSmoothing(
+                    latitudes.toDoubleArray(),
+                    longitudes.toDoubleArray(),
+                    0.001,
+                    trueLats,
+                    trueLongs
+                )
+                gpsLowess.smoothAndEvaluateAndGroup(0.000089)
+                smoothedLatLngList = gpsLowess.getSmoothedLatLngList()
+                groups = gpsLowess.getGroups()
+                mae = gpsLowess.getMAE()
+            }
+            "Simple MA" -> {
+                val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
+                    longitudes.toDoubleArray(),
+                    0.001,
+                    trueLats,
+                    trueLongs)
+                gpsMA.smoothAndEvaluateAndGroup()
+                smoothedLatLngList = gpsMA.getSmoothedLatLngList()
+                groups = gpsMA.getGroups()
+                mae = gpsMA.getMAE()
+            }
+            "Kalman Filter" -> {
+                val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
+                    longitudes.toDoubleArray(),
+                    accX,
+                    accY,
+                    0.001,
+                    trueLats,
+                    trueLongs)
+                gpsKF.applyPostProcessingAndGroup()
+                smoothedLatLngList=gpsKF.getCorrectedLatLngList()
+                groups = gpsKF.getGroups()
+                mae = gpsKF.getMAE()
+            }
+            else -> {
+                val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
+                    longitudes.toDoubleArray(),
+                    0.001,
+                    trueLats,
+                    trueLongs)
+                gpsMA.smoothAndEvaluateAndGroup()
+                smoothedLatLngList = gpsMA.getSmoothedLatLngList()
+                groups = gpsMA.getGroups()
+                mae = gpsMA.getMAE()
+            }
         }
         for ((index, latLng) in smoothedLatLngList?.withIndex()!!) {
             val groupId = getGroupIdForPoint(index, groups)

@@ -3,6 +3,8 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
+import org.jetbrains.kotlinx.multik.api.mk
+import org.jetbrains.kotlinx.multik.api.ndarray
 import kotlin.math.abs
 import kotlin.collections.mutableMapOf
 
