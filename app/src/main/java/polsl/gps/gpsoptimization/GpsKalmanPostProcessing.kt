@@ -3,9 +3,7 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
-import kotlin.math.abs
-import kotlin.math.pow
-import kotlin.math.sqrt
+import kotlin.math.*
 
 class GpsKalmanPostProcessing(
     private val latitudes: DoubleArray,
@@ -28,7 +26,7 @@ class GpsKalmanPostProcessing(
     @RequiresApi(Build.VERSION_CODES.N)
     fun applyPostProcessingAndGroup() {
         // Iteracja po wszystkich pomiarach
-        createWindows(latitudes, longitudes, threshold, groupIndexMap)
+        createWindows()
         for (i in latitudes.indices) {
             // Sprawdzenie, czy odczyty z akcelerometra są wystarczająco duże, aby wskazać na zmianę kierunku
             // Wykorzystanie filtru Kalmana do korekcji ścieżki lokalizacyjnej na podstawie przyspieszenia z akcelerometra
@@ -44,7 +42,7 @@ class GpsKalmanPostProcessing(
                 kalmanFilter.filter(longitudes[i].toFloat(), accelerationData.toFloat())
             correctedLatitudes[i] = correctedLat.toDouble()
             correctedLongitudes[i] = correctedLon.toDouble()
-            var groupId = groupIndexMap[i]
+            val groupId = groupIndexMap[i]
 
             errors[i] = calculateMAE(correctedLatitudes[i], correctedLongitudes[i], groupId)
             if (groupId != null) {
@@ -55,12 +53,14 @@ class GpsKalmanPostProcessing(
         Log.d("GRUPY KALman", groups.toString())
         }
 
-    private fun createWindows(latitudes: DoubleArray, longitudes: DoubleArray, threshold: Double, windowIndexMap: MutableMap<Int, Int>): List<Int>{
+    private fun createWindows(): List<Int>{
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         var windowIndex = 0
-        var lastIndex = 0
+        var lastIndex: Int
         var index = 0
+        val ungroupedIndexes = mutableListOf<Int>()
+        var incrementRate = 0.001
         while (index < latitudes.size) {
             var windowSize = 1 // Rozmiar aktualnego okna
 
@@ -70,21 +70,24 @@ class GpsKalmanPostProcessing(
                 if(index !in indexesInWindows) {
                     windowSize++
                     indexesInWindows.add(index)
-                    windowIndexMap[index] = windowIndex
+                    groupIndexMap[index] = windowIndex
                 }
 
                 index++
             }
             lastIndex = index
             if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
-                windowIndexMap[lastIndex] = windowIndex
+            {
+                groupIndexMap[lastIndex] = windowIndex
+                indexesInWindows.add(lastIndex)
+            }
             // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
             while (index < latitudes.size - 1)
             {   index++
                 if(isSimilar(latitudes[lastIndex], longitudes[lastIndex], latitudes[index], longitudes[index], threshold) && index !in indexesInWindows) {
                     windowSize++
                     indexesInWindows.add(index)
-                    windowIndexMap[index] = windowIndex
+                    groupIndexMap[index] = windowIndex
 
                 }
             }
@@ -97,6 +100,48 @@ class GpsKalmanPostProcessing(
 
             index++
         }
+        ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
+        var diff = 10.0
+        var oldDiff = diff
+        while(ungroupedIndexes.size>0) {
+            val foundIndex: MutableList<Int> = mutableListOf()
+            Log.d("Oprozniamy", ungroupedIndexes.toString())
+            ungroupedIndexes.forEach {
+                for(tmp in indexesInWindows)
+                {
+                    // Przeszukanie indexesInWindows w poszukiwaniu najbliższego indeksu
+                    if (isSimilar(
+                            latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp],
+                            (threshold + incrementRate)
+                        )
+                    )
+                    // Jeśli znaleziono najbliższy indeks
+                    {
+                        diff = similarityVal(latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp])
+                        if(diff<oldDiff)
+                        {
+                            oldDiff = diff
+                            val group = groupIndexMap[tmp]
+                            if (group != null) {
+                                groupIndexMap[it] = group
+                                foundIndex.add(it)
+                            }
+                        }
+
+                    }
+                }
+                oldDiff = 1.0
+
+            }
+            ungroupedIndexes.removeAll(foundIndex)
+            incrementRate+=incrementRate
+        }
 
         return windows
     }
@@ -105,29 +150,32 @@ class GpsKalmanPostProcessing(
         lat2: Double, lon2: Double,
         threshold: Double
     ): Boolean {
-        val latDiff = Math.abs(lat1 - lat2)
-        val lonDiff = Math.abs(lon1 - lon2)
-        return latDiff < threshold && lonDiff < threshold
+        val R = 6371.0 // Średni promień Ziemi w kilometrach
+
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        return R * c < threshold
     }
-    private fun assignToGroup(index: Int, groupIndices: MutableList<Int>){
-        for (i in latitudes.indices) {
-            if (isNearby(latitudes[index], longitudes[index], latitudes[i], longitudes[i])) {
-                groupIndices.add(i)
-            }
-        }
-    }
-    private fun isNearby(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Boolean {
-        val latDiff = abs(lat1 - lat2)
-        val lonDiff = abs(lon1 - lon2)
-        return latDiff < threshold && lonDiff < threshold
-    }
-    private fun whichGroup(index: Int): MutableList<Int>{
-        groups.values.forEach { groupIndices ->
-            if (index in groupIndices) {
-                return groupIndices
-            }
-        }
-        return mutableListOf<Int>()
+    private fun similarityVal(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Double
+    {
+        val R = 6371.0 // Średni promień Ziemi w kilometrach
+
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        return R * c
     }
     fun getGroups(): Map<Int, List<Int>> {
         return groups
@@ -146,32 +194,11 @@ class GpsKalmanPostProcessing(
             return Double.NaN // NaN oznacza "Not a Number"
         }
     }
-    // Obliczenie odległości między dwoma punktami na sferze
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        // Rząd wielkości promienia Ziemi w metrach
-        val R = 6371e3
 
-        // Konwersja na radiany
-        val lat1Rad = Math.toRadians(lat1)
-        val lon1Rad = Math.toRadians(lon1)
-        val lat2Rad = Math.toRadians(lat2)
-        val lon2Rad = Math.toRadians(lon2)
-
-        // Obliczenie różnicy długości i szerokości geograficznych
-        val dLon = lon2Rad - lon1Rad
-        val dLat = lat2Rad - lat1Rad
-
-        // Obliczenie odległości
-        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-                kotlin.math.cos(lat1Rad) * kotlin.math.cos(lat2Rad) *
-                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
-        return R * c
-    }
-    private fun isSignificantChange(accelerationX: Double, accelerationY: Double): Boolean {
-        val totalAcceleration = kotlin.math.sqrt(accelerationX.pow(2) + accelerationY.pow(2))
-        return totalAcceleration > threshold
-    }
+//    private fun isSignificantChange(accelerationX: Double, accelerationY: Double): Boolean {
+//        val totalAcceleration = kotlin.math.sqrt(accelerationX.pow(2) + accelerationY.pow(2))
+//        return totalAcceleration > threshold
+//    }
     fun getCorrectedLatLngList(): List<LatLng> {
         val correctedLatLngList = mutableListOf<LatLng>()
         for (i in correctedLatitudes.indices) {

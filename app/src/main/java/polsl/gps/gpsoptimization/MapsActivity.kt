@@ -36,7 +36,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         binding = ActivityMapsBinding.inflate(layoutInflater)
         setContentView(binding!!.getRoot())
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        var mapFragment = supportFragmentManager
+        val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment?
         mapFragment!!.getMapAsync(this)
         val application = applicationContext as Application
@@ -62,6 +62,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
      */
     @RequiresApi(Build.VERSION_CODES.N)
     override fun onMapReady(googleMap: GoogleMap) {
+        Log.d("LALALA", "XD")
         for (location in savedLocations!!){
             latitudes.add(location.latitude)
             longitudes.add(location.longitude)
@@ -83,11 +84,11 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                 val gpsLowess = GpsLowessSmoothing(
                     latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.001,
+                    0.0001,
                     trueLats,
                     trueLongs
                 )
-                gpsLowess.smoothAndEvaluateAndGroup(0.000089)
+                gpsLowess.smoothAndEvaluateAndGroup(0.0015)
                 smoothedLatLngList = gpsLowess.getSmoothedLatLngList()
                 groups = gpsLowess.getGroups()
                 mae = gpsLowess.getMAE()
@@ -95,7 +96,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             "Simple MA" -> {
                 val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.001,
+                    0.0015,
                     trueLats,
                     trueLongs)
                 gpsMA.smoothAndEvaluateAndGroup()
@@ -103,12 +104,12 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                 groups = gpsMA.getGroups()
                 mae = gpsMA.getMAE()
             }
-            "Kalman Filter" -> {
+            "Simple Kalman Filter" -> {
                 val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
                     accX,
                     accY,
-                    0.001,
+                    0.0015,
                     trueLats,
                     trueLongs)
                 gpsKF.applyPostProcessingAndGroup()
@@ -119,7 +120,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             else -> {
                 val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.001,
+                    0.0015,
                     trueLats,
                     trueLongs)
                 gpsMA.smoothAndEvaluateAndGroup()
@@ -135,7 +136,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                     MarkerOptions()
                         .position(latLng)
                         .title("(Group $groupId) MAE$maeForPoint Smoothed $latLng ")
-                        .icon(BitmapDescriptorFactory.defaultMarker(getMarkerColor(maeForPoint)))
+                        .icon(BitmapDescriptorFactory.defaultMarker(359.0f))
                         .zIndex(1.0f)
                 )
         }
@@ -185,7 +186,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         val maxMae = 0.1 // Maksymalna wartość MAE dla maksymalnego koloru
         val minMae = 0.0 // Minimalna wartość MAE dla minimalnego koloru
         val hue = (mae.coerceIn(minMae, maxMae) / maxMae) * 120 // Wartości do 120, aby ograniczyć zakres kolorów
-        if (hue < 0 || hue > 360 || hue == Double.NaN)   return 0.0f
+        if (hue < 0 || hue > 360 || hue.isNaN())   return 0.0f
         return hue.toFloat()
     }
     private fun getLatLngBounds(latLngList: List<LatLng>): LatLngBounds {

@@ -3,10 +3,8 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
-import org.jetbrains.kotlinx.multik.api.mk
-import org.jetbrains.kotlinx.multik.api.ndarray
-import kotlin.math.abs
 import kotlin.collections.mutableMapOf
+import kotlin.math.*
 
 class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitudes: DoubleArray, private var bandwidth: Double, private val trueLatitudes: DoubleArray,
                          private val trueLongitudes: DoubleArray) {
@@ -18,16 +16,16 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup(threshold: Double) {
         //val windowSize = calculateWindowSize(latitudes, longitudes)
-        createWindows(latitudes, longitudes, threshold, windowIndexMap)
+        createWindows(threshold)
         for (i in latitudes.indices) {
 
             Log.d("WINDOWS SIZES", " indeksy: $windowIndexMap")
 
-            val smoothedCoordinate = loessSmooth(i, windowIndexMap)
+            val smoothedCoordinate = loessSmooth(i)
             smoothedLatitudes[i] = smoothedCoordinate.first
             smoothedLongitudes[i] = smoothedCoordinate.second
             Log.d("index grupy", windowIndexMap[i].toString())
-            var groupId = windowIndexMap[i]
+            val groupId = windowIndexMap[i]
             Log.d("koorydanty LOWESS:", (i.toString() + " " + smoothedLatitudes[i].toString() + smoothedLongitudes[i].toString() + "  $i" + groupId.toString()))
             // Ewaluacja MAE
             errors[i] = calculateMAE(smoothedCoordinate.first, smoothedCoordinate.second, groupId)
@@ -37,12 +35,14 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         }
         Log.d("GRUPY", groups.toString())
     }
-    private fun createWindows(latitudes: DoubleArray, longitudes: DoubleArray, threshold: Double, windowIndexMap: MutableMap<Int, Int>): List<Int>{
+    private fun createWindows(threshold: Double): List<Int>{
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         var windowIndex = 0
-        var lastIndex = 0
+        var lastIndex: Int
         var index = 0
+        val ungroupedIndexes = mutableListOf<Int>()
+        var incrementRate = 0.001
         while (index < latitudes.size) {
             var windowSize = 1 // Rozmiar aktualnego okna
 
@@ -59,7 +59,10 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
             }
             lastIndex = index
             if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+            {
                 windowIndexMap[lastIndex] = windowIndex
+                indexesInWindows.add(lastIndex)
+            }
             // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
             while (index < latitudes.size - 1)
             {   index++
@@ -79,14 +82,75 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
 
             index++
         }
+        ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
+        var diff = 10.0
+        var oldDiff = diff
+        while(ungroupedIndexes.size>0) {
+            val foundIndex: MutableList<Int> = mutableListOf()
+            Log.d("Oprozniamy", ungroupedIndexes.toString())
+            ungroupedIndexes.forEach {
+                for(tmp in indexesInWindows)
+                {
+                    // Przeszukanie indexesInWindows w poszukiwaniu najbliższego indeksu
+                    if (isSimilar(
+                            latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp],
+                            (threshold + incrementRate)
+                        )
+                    )
+                    // Jeśli znaleziono najbliższy indeks
+                    {
+                        diff = similarityVal(latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp])
+                        if(diff<oldDiff)
+                        {
+                            oldDiff = diff
+                            val group = windowIndexMap[tmp]
+                            if (group != null) {
+                                windowIndexMap[it] = group
+                                foundIndex.add(it)
+                            }
+                        }
+
+                    }
+                }
+                oldDiff = 1.0
+                //if(isFound) {break}
+            }
+            ungroupedIndexes.removeAll(foundIndex)
+            incrementRate+=incrementRate
+        }
 
         return windows
     }
+    private fun similarityVal(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Double
+    {
+//        val latDiff = lat1 - lat2
+//        val lonDiff = lon1 - lon2
+//        val distanceSquared = latDiff * latDiff + lonDiff * lonDiff
+//        return sqrt(distanceSquared)
+        val R = 6371.0 // Średni promień Ziemi w kilometrach
 
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
-    private fun loessSmooth(index: Int, windowIndexMap: MutableMap<Int, Int>): Pair<Double, Double> {
+        return R * c
+    }
+
+    private fun loessSmooth(index: Int): Pair<Double, Double> {
         val xi = latitudes[index]
-        val weights = calculateWeights(xi, index, windowIndexMap)
+        val weights = calculateWeights(xi, index)
 
         var sumLat = 0.0
         var sumLon = 0.0
@@ -108,7 +172,7 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         return Pair(smoothedLatitude, smoothedLongitude)
     }
 
-    private fun calculateWeights(xi: Double, index: Int, windowIndexMap: MutableMap<Int, Int>): DoubleArray {
+    private fun calculateWeights(xi: Double, index: Int): DoubleArray {
         val weights = DoubleArray(latitudes.size)
         val groupToIterate = windowIndexMap[index]
         for ((i, group) in windowIndexMap) {
@@ -148,9 +212,22 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         lat2: Double, lon2: Double,
         threshold: Double
     ): Boolean {
-        val latDiff = Math.abs(lat1 - lat2)
-        val lonDiff = Math.abs(lon1 - lon2)
-        return latDiff < threshold && lonDiff < threshold
+//        val latDiff = lat1 - lat2
+//        val lonDiff = lon1 - lon2
+//        val distanceSquared = latDiff * latDiff + lonDiff * lonDiff
+//        return distanceSquared < threshold * threshold
+        val R = 6371.0 // Średni promień Ziemi w kilometrach
+
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        //Log.d("Odleglosc: ", "Między $lat1, $lat2" +"  "+ (R * c).toString())
+
+        return R * c < threshold
     }
     private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
 
