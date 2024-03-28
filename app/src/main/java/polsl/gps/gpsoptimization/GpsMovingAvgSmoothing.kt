@@ -7,11 +7,9 @@ import com.google.android.gms.maps.model.LatLng
 import kotlin.math.*
 
 class GpsMovingAvgSmoothing(
-    private val latitudes: DoubleArray,
-    private val longitudes: DoubleArray,
-    private val threshold: Double,
-    private val trueLatitudes: DoubleArray,
-    private val trueLongitudes: DoubleArray
+    private val latitudes: DoubleArray, private val longitudes: DoubleArray,
+    private val threshold: Double, private val trueLatitudes: DoubleArray,
+    private val trueLongitudes: DoubleArray, private val timeStamps: MutableList<Long>
 ) {
     private val smoothedLatitudes = DoubleArray(latitudes.size)
     private val smoothedLongitudes = DoubleArray(longitudes.size)
@@ -21,7 +19,7 @@ class GpsMovingAvgSmoothing(
 
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
-        createWindows()
+        createWindows(1000)
         for (i in latitudes.indices) {
             val smoothedCoordinate = movingAverage(i)
             smoothedLatitudes[i] = smoothedCoordinate.first
@@ -33,18 +31,17 @@ class GpsMovingAvgSmoothing(
             }
         }
     }
-    private fun createWindows(): List<Int>{
+    private fun createWindows(timeThreshold: Long): List<Int>{
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         var windowIndex = 0
-        var lastIndex : Int
+        var lastIndex: Int
         var index = 0
         val ungroupedIndexes = mutableListOf<Int>()
         var incrementRate = 0.001
+        var incrementTimeRate: Long = 1000
         while (index < latitudes.size) {
             var windowSize = 1 // Rozmiar aktualnego okna
-
-            // Sprawdzamy kolejne współrzędne, dopóki są podobne
             while (index < latitudes.size - 1 &&
                 isSimilar(latitudes[index], longitudes[index], latitudes[index + 1], longitudes[index + 1], threshold)) {
                 if(index !in indexesInWindows) {
@@ -52,15 +49,28 @@ class GpsMovingAvgSmoothing(
                     indexesInWindows.add(index)
                     groupIndexMap[index] = windowIndex
                 }
-
                 index++
             }
-            lastIndex = index
-            if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
-            {
-                groupIndexMap[lastIndex] = windowIndex
-                indexesInWindows.add(lastIndex)
+            if(index == 0){
+                lastIndex = 1
+                index = 1
+                Log.d("index", 0.toString())
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    groupIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+                //index = 0
             }
+            else{
+                lastIndex = index
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    groupIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+            }
+
             // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
             while (index < latitudes.size - 1)
             {   index++
@@ -115,13 +125,21 @@ class GpsMovingAvgSmoothing(
                         }
 
                     }
+                    else if(it !in foundIndex && isSimilarTime(timeStamps[it], timeStamps[tmp], timeThreshold + incrementTimeRate)){
+                        //Log.d("Dorzucam", "na podstawie czasu dla $it")
+                        val group = groupIndexMap[tmp]
+                        if (group != null) {
+                            groupIndexMap[it] = group
+                            foundIndex.add(it)
+                        }
+                    }
                 }
                 oldDiff = 1.0
             }
             ungroupedIndexes.removeAll(foundIndex)
             incrementRate+=incrementRate
+            incrementTimeRate+=incrementTimeRate
         }
-
         return windows
     }
 
@@ -142,6 +160,9 @@ class GpsMovingAvgSmoothing(
         val smoothedLongitude = sumLon / count
         Log.d("koord:", "$smoothedLatitude" + " $smoothedLongitude" +" $index")
         return Pair(smoothedLatitude, smoothedLongitude)
+    }
+    private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{
+        return abs(time1- time2) < threshold
     }
     private fun isSimilar(
         lat1: Double, lon1: Double,

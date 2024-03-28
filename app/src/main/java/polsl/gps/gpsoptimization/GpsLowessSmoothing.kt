@@ -7,7 +7,7 @@ import kotlin.collections.mutableMapOf
 import kotlin.math.*
 
 class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitudes: DoubleArray, private var bandwidth: Double, private val trueLatitudes: DoubleArray,
-                         private val trueLongitudes: DoubleArray) {
+                         private val trueLongitudes: DoubleArray, private val timeStamps: MutableList<Long>) {
     private val smoothedLatitudes = DoubleArray(latitudes.size)
     private val smoothedLongitudes = DoubleArray(longitudes.size)
     private val groups = mutableMapOf<Int, MutableList<Int>>()
@@ -16,11 +16,9 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup(threshold: Double) {
         //val windowSize = calculateWindowSize(latitudes, longitudes)
-        createWindows(threshold)
+        createWindows(threshold, 1000)
         for (i in latitudes.indices) {
-
             Log.d("WINDOWS SIZES", " indeksy: $windowIndexMap")
-
             val smoothedCoordinate = loessSmooth(i)
             smoothedLatitudes[i] = smoothedCoordinate.first
             smoothedLongitudes[i] = smoothedCoordinate.second
@@ -35,7 +33,7 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         }
         Log.d("GRUPY", groups.toString())
     }
-    private fun createWindows(threshold: Double): List<Int>{
+    private fun createWindows(threshold: Double, timeThreshold: Long): List<Int>{
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         var windowIndex = 0
@@ -43,9 +41,11 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
         var index = 0
         val ungroupedIndexes = mutableListOf<Int>()
         var incrementRate = 0.001
+        var incrementTimeRate: Long = 1000
         while (index < latitudes.size) {
             var windowSize = 1 // Rozmiar aktualnego okna
-
+            //Sprawdzamy czas dopóki jest podobny
+            //TODO
             // Sprawdzamy kolejne współrzędne, dopóki są podobne
             while (index < latitudes.size - 1 &&
                 isSimilar(latitudes[index], longitudes[index], latitudes[index + 1], longitudes[index + 1], threshold)) {
@@ -54,15 +54,28 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
                     indexesInWindows.add(index)
                     windowIndexMap[index] = windowIndex
                 }
-
                 index++
             }
-            lastIndex = index
-            if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
-            {
-                windowIndexMap[lastIndex] = windowIndex
-                indexesInWindows.add(lastIndex)
+            if(index == 0){
+                lastIndex = 1
+                index = 1
+                Log.d("index", 0.toString())
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    windowIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+                //index = 0
             }
+            else{
+                lastIndex = index
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    windowIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+            }
+
             // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
             while (index < latitudes.size - 1)
             {   index++
@@ -117,12 +130,21 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
                         }
 
                     }
+                    if(it !in foundIndex && isSimilarTime(timeStamps[it], timeStamps[tmp], timeThreshold + incrementTimeRate)){
+                        //Log.d("Dorzucam", "na podstawie czasu dla $it")
+                        val group = windowIndexMap[tmp]
+                        if (group != null) {
+                            windowIndexMap[it] = group
+                            foundIndex.add(it)
+                        }
+                    }
                 }
                 oldDiff = 1.0
                 //if(isFound) {break}
             }
             ungroupedIndexes.removeAll(foundIndex)
             incrementRate+=incrementRate
+            incrementTimeRate+=incrementTimeRate
         }
 
         return windows
@@ -206,6 +228,9 @@ class GpsLowessSmoothing(private val latitudes: DoubleArray, private val longitu
             smoothedLatLngList.add(LatLng(smoothedLatitudes[i], smoothedLongitudes[i]))
         }
         return smoothedLatLngList
+    }
+    private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{
+        return abs(time1- time2) < threshold
     }
     private fun isSimilar(
         lat1: Double, lon1: Double,

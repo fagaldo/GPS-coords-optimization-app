@@ -25,13 +25,17 @@ class Application : android.app.Application() {
     }
     private fun loadData()
     {
+        Log.d("ładuje", "xd")
         val sharedPreferences: SharedPreferences = getSharedPreferences("waypoints", MODE_PRIVATE)
         val emptyList = Gson().toJson(ArrayList<String>())
         val json = sharedPreferences.getString("waypoints", emptyList)
+
         val type = object : TypeToken<ArrayList<String>>() {}.type
+
         locationsStrings = Gson().fromJson(json, type)
         for (loc in locationsStrings) {
-            locations.add(parseStringToLoc(loc))
+            if(locationsStrings.isNotEmpty())
+                locations.add(parseStringToLoc(loc))
         }
 
     }

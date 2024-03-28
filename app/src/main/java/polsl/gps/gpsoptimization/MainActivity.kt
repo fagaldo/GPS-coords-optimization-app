@@ -12,6 +12,8 @@ import android.location.Geocoder
 import android.location.Location
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.*
@@ -55,7 +57,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationCallBack: LocationCallback
     private lateinit var locationRequest: LocationRequest
     //Location request is a config file for all settings related to FusedLocationProviderClient
+    private val handler = Handler(Looper.getMainLooper())
+    private val delay: Long = 1000 // opóźnienie w milisekundach (5 sekund)
 
+    private val runnable = object : Runnable {
+        override fun run() {
+            // Tutaj umieść kod, który ma być wykonany co określoną liczbę sekund
+            // Na przykład:
+            if(updateOn)
+                updateGPS()
+
+            // Zaplanuj ponowne wywołanie po upływie określonego czasu
+            handler.postDelayed(this, delay)
+        }
+    }
 
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        handler.postDelayed(runnable, delay)
         val adapter: ArrayAdapter<CharSequence> = ArrayAdapter.createFromResource(
             this,
             R.array.smoothing_algorithms,
@@ -96,24 +112,27 @@ class MainActivity : AppCompatActivity() {
             override fun onLocationResult(locationResult: LocationResult) {
                 super.onLocationResult(locationResult)
                 //save the location
-                locationResult.lastLocation?.let { updateUIValues(it) }
+                locationResult.lastLocation?.let {
+                    updateUIValues(it)
+                }
             }
         }
-        locationRequest = LocationRequest.Builder(10)
-            .setMinUpdateDistanceMeters(0F) // Najkrótszy dopuszczalny interwał aktualizacji lokalizacji (np. co 5 sekund)
+        locationRequest = LocationRequest.Builder(DEFAULT_FAST_UPDATE_INTERVAL)
+            .setMinUpdateDistanceMeters(1.0F)
             .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY) // Priorytet lokalizacji (wysoka dokładność)
+            .setIntervalMillis(DEFAULT_FAST_UPDATE_INTERVAL)
             .build()
 
         sw_gps.setOnClickListener {
             if (sw_gps.isChecked()) {
                 //most accurate - use GPS
                 locationRequest =
-                    LocationRequest.Builder(10).setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                    LocationRequest.Builder(DEFAULT_FAST_UPDATE_INTERVAL).setPriority(Priority.PRIORITY_HIGH_ACCURACY)
                         .build()
                 tv_sensor.setText("High accuracy")
             } else {
                 locationRequest =
-                    LocationRequest.Builder(100).setPriority(Priority.PRIORITY_LOW_POWER)
+                    LocationRequest.Builder(DEFAULT_UPDATE_INTERVAL).setPriority(Priority.PRIORITY_LOW_POWER)
                         .build()
                 tv_sensor.setText("Low Power")
             }
@@ -136,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             //savedLocations = application.getLocations()
 
             savedLocations.add(myCurrLocation)
-            Log.d("Accuracy dodanego ", myCurrLocation.accuracy.toString())
             application.setLocations(savedLocations as ArrayList<MyLocation>)
             updateGPS()
         })
@@ -162,7 +180,8 @@ class MainActivity : AppCompatActivity() {
             if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
                 x = event.values[0].toDouble()
                 y = event.values[1].toDouble()
-                //Log.d("Przyspieszenia","Przyspieszenie x: $x przypiszenie y: $y, przyspieszenie z: $z")
+                var z = event.values[2].toDouble()
+                //updateGPS()
             }
         }
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -239,6 +258,7 @@ class MainActivity : AppCompatActivity() {
                         myCurrLocation.longitude = currLocation.longitude
                         myCurrLocation.velocityX = x
                         myCurrLocation.velocityY = y
+                        savedLocations.add(myCurrLocation)
                         //we got permission. Put the values of location. XXX into the UI components.
                         updateUIValues(location)
                     }
@@ -285,9 +305,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val DEFAULT_UPDATE_INTERVAL = 30
-        const val DEFAULT_FAST_UPDATE_INTERVAL = 5
+        const val DEFAULT_UPDATE_INTERVAL: Long = 30
+        const val DEFAULT_FAST_UPDATE_INTERVAL: Long = 1
         const val PERMISSIONS_FINE_LOCATION = 99
-        const val MAPS_API_KEY = "AIzaSyDjz9DNYG-G6w2teu95VxuyfkjrKUdrZCw"
     }
 }
