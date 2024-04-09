@@ -3,29 +3,19 @@ package polsl.gps.gpsoptimization
 import android.content.Context
 import android.content.SharedPreferences
 import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.location.Location
-import android.media.MediaCodec.MetricsConstants.MODE
 
 import android.os.Bundle
-import android.os.Parcel
-import android.os.Parcelable
-import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ListView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.gson.*
-import com.google.gson.annotations.JsonAdapter
 import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.io.FileOutputStream
-import java.lang.reflect.Type
 import java.util.*
-import kotlin.math.pow
 
 
 class ShowSavedLocationsList : AppCompatActivity() {
@@ -52,14 +42,17 @@ class ShowSavedLocationsList : AppCompatActivity() {
         savedLocations = application.getLocations()
         for(location in savedLocations)
             printList.add("Latitude:" + location.latitude.toString() + " Longitude:" +
-                    location.longitude.toString() + " Accuracy:" + location.accuracy.toString() +
-                    " SX:" + location.velocityX + " SY:" + location.velocityY + " Time:" + location.time
+                    location.longitude.toString() + " Altitude:" + location.altitude.toString() +
+                    " Accuracy:" + location.accuracy.toString() + " SX:" + location.accelerationX +
+                    " SY:" + location.accelerationY + " SZ:" + location.accelerationZ
+                    +" Time:" + location.time + " Azimuth:" + location.azimuth.toString()
                     )
 
         lv_savedLocations.adapter =
             ArrayAdapter(this, android.R.layout.simple_list_item_1, printList)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
         }
 
     private fun saveData() {

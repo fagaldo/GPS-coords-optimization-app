@@ -1,8 +1,10 @@
-/*
 package polsl.gps.gpsoptimization
+
 
 import android.os.Build.VERSION_CODES.P
 import android.os.Build.VERSION_CODES.Q
+import android.util.Log
+import com.google.android.gms.maps.model.LatLng
 import com.google.gson.GsonBuilder
 import org.jetbrains.kotlinx.multik.api.*
 import org.jetbrains.kotlinx.multik.ndarray.data.D2
@@ -15,23 +17,25 @@ import org.jetbrains.kotlinx.multik.ndarray.operations.reversed
 import org.jetbrains.kotlinx.multik.ndarray.operations.times
 import java.io.File
 import kotlin.math.*
-
+/*
 const val EARTH_RADIUS = 6371 * 1000.0
 const val FOUR_SPACES = "    "
 const val ACTUAL_GRAVITY = 9.80665
 
-class ProperKalman(val Timestamp: Double,
-                   val GpsLat: Double,
-                   val GpsLon: Double,
-                   val GpsAlt: Double,
-                   val AbsNorthAcc: Float,
-                   val AbsEastAcc: Float,
-                   val AbsUpAcc: Float,
-                   val VelNorth: Double,
-                   val VelEast: Double,
-                   val VelDown: Double,
-                   val VelError: Double,
-                   val AltitudeError: Double) {
+class ProperKalman(val Timestamps: MutableList<Long>,
+                   val GpsLats: DoubleArray,
+                   val GpsLons: DoubleArray,
+                   val GpsAlts: DoubleArray,
+                   val AbsNorthAccs: MutableList<Double>,
+                   val AbsEastAccs: MutableList<Double>,
+                   val AbsUpAccs: MutableList<Double>,
+                   val VelsNorth: MutableList<Double>,
+                   val VelsEast: MutableList<Double>,
+                   val VelsDown: MutableList<Double>,
+                   val VelsError: MutableList<Double>,
+                   val AltitudesError: MutableList<Double>) {
+    private val smoothedLatitudes = DoubleArray(GpsLats.size)
+    private val smoothedLongitudes = DoubleArray(GpsLons.size)
 
     data class LatLng(
         val Latitude: Double,
@@ -116,9 +120,9 @@ class ProperKalman(val Timestamp: Double,
         val GpsLat: Double,
         val GpsLon: Double,
         val GpsAlt: Double,
-        val AbsNorthAcc: Float,
-        val AbsEastAcc: Float,
-        val AbsUpAcc: Float,
+        val AbsNorthAcc: Double,
+        val AbsEastAcc: Double,
+        val AbsUpAcc: Double,
         val VelNorth: Double,
         val VelEast: Double,
         val VelDown: Double,
@@ -135,8 +139,6 @@ class ProperKalman(val Timestamp: Double,
         val GPSLat: Double,
         val GPSLon: Double
     )
-
-    val u = Array(2){ Array<Int>(2) {0}}
 
 
     fun writeJsonSerializableToFile(jsonEntity: Any, filename: String) {
@@ -163,24 +165,24 @@ class ProperKalman(val Timestamp: Double,
             recreateControlMatrix(deltaT)
             recreateStateTransitionMatrix(deltaT)
             u[0, 0] = accelerationThisAxis
-            currentState = (A * currentState) + (B * u)
+            currentState = A.times(currentState) + B.times(u)//(A * currentState) + (B * u)
             P = ((A * P) * A.transpose()) + Q
             currentStateTimestampSeconds = timestampNow
         }
 
         fun update(position: Double, velocityThisAxis: Double, positionError: Double?, velocityError: Double) {
             z[0, 0] = position
-            z[0, 0] = velocityThisAxis
+            z[1, 0] = velocityThisAxis
             if (positionError != null) {
                 R[0, 0] = positionError * positionError
             }
             R[1, 1] = velocityError * velocityError
-            val y = z - currentState
+            val y = z - (H * currentState) //dodano * H
             val s = P + R
             val sInverse = s.reversed() ?: return
             val K = P * sInverse
             currentState += K * y
-            P = (I - K) * P
+            P = (I - (K * H)) * P //dodao * H
         }
 
         private fun recreateControlMatrix(deltaSeconds: Double) {
@@ -206,9 +208,8 @@ class ProperKalman(val Timestamp: Double,
     }
 
     fun main() {
-        val collection = readFileAsJson("pos_final.json")
-        //val collection = this
-        val initialSensorData = collection[0]
+        var collection:List<SensorData> = generateSensorDataList()
+        val initialSensorData: SensorData = collection[0]
         val latLonStandardDeviation = 2.0
         val altitudeStandardDeviation = 3.518522417151836
 
@@ -226,11 +227,11 @@ class ProperKalman(val Timestamp: Double,
                 this[0, 0] = latLonStandardDeviation * latLonStandardDeviation
                 this [1, 1] = latLonStandardDeviation * latLonStandardDeviation
             },
-            u = mk.zeros(1, 1),
-            z = mk.zeros(2, 1),
+            u = mk.zeros(2, 2),
+            z = mk.zeros(2, 2),
             A = mk.zeros(2, 2),
-            B = mk.zeros(2, 1),
-            currentState = mk.zeros<Double>(2,1).apply {
+            B = mk.zeros(2, 2),
+            currentState = mk.zeros<Double>(2,2).apply {
                 this[0, 0] = longitudeToMeters(initialSensorData.GpsLon)
                 this[1, 0] = initialSensorData.VelEast
             },
@@ -247,11 +248,11 @@ class ProperKalman(val Timestamp: Double,
                 this[0, 0] = latLonStandardDeviation * latLonStandardDeviation
                 this [1, 1] = latLonStandardDeviation * latLonStandardDeviation
             },
-            u = mk.zeros(1, 1),
-            z = mk.zeros(2, 1),
+            u = mk.zeros(2, 2),
+            z = mk.zeros(2, 2),
             A = mk.zeros(2, 2),
-            B = mk.zeros(2, 1),
-            currentState = mk.zeros<Double>(2,1).apply {
+            B = mk.zeros(2, 2),
+            currentState = mk.zeros<Double>(2,2).apply {
                 this[0, 0] = latitudeToMeters(initialSensorData.GpsLon)
                 this[1, 0] = initialSensorData.VelNorth
             },
@@ -268,18 +269,18 @@ class ProperKalman(val Timestamp: Double,
                 this[0, 0] = altitudeStandardDeviation * altitudeStandardDeviation
                 this [1, 1] = altitudeStandardDeviation * altitudeStandardDeviation
             },
-            u = mk.zeros(1, 1),
-            z = mk.zeros(2, 1),
+            u = mk.zeros(2, 2),
+            z = mk.zeros(2, 2),
             A = mk.zeros(2, 2),
-            B = mk.zeros(2, 1),
-            currentState = mk.zeros<Double>(2,1).apply {
+            B = mk.zeros(2, 2),
+            currentState = mk.zeros<Double>(2,2).apply {
                 this[0, 0] = initialSensorData.GpsAlt
                 this[1, 0] = initialSensorData.VelDown * -1.0
             },
             currentStateTimestampSeconds = initialSensorData.Timestamp
         )
         val outputs = mutableListOf<OutputPacket>()
-        for (i in 1 until collection.size) {
+        for (i in collection.indices) {
             val data = collection[i]
             longitudeEastKalmanFilter.predict(
                 data.AbsEastAcc.toDouble() * ACTUAL_GRAVITY,
@@ -325,11 +326,14 @@ class ProperKalman(val Timestamp: Double,
             val point = metersToGeopoint(predictedLatMeters, predictedLonMeters)
             val predictedLon = point.Longitude
             val predictedLat = point.Latitude
+            smoothedLatitudes[i] = (point.Latitude)
+            smoothedLongitudes[i] = (point.Longitude)
             val predictedVE = longitudeEastKalmanFilter.getPredictedVelocityThisAxis()
             val predictedVN = latitudeNorthKalmanFilter.getPredictedVelocityThisAxis()
             val resultantV = sqrt(predictedVE.pow(2) + predictedVN.pow(2))
             val deltaT = data.Timestamp - initialSensorData.Timestamp
-            println("$deltaT seconds in, Lat: $predictedLat, Lon: $predictedLon, Alt: $predictedAlt, V(mph): ${2.23694 * resultantV}, A: ${data.AbsEastAcc * ACTUAL_GRAVITY}")
+            println("$deltaT seconds in, Lat: $predictedLat, Lon: $predictedLon, Alt: $predictedAlt, " +
+                    "V(mph): ${2.23694 * resultantV}, A: ${data.AbsEastAcc * ACTUAL_GRAVITY}")
             outputs.add(
                 OutputPacket(
                     sensorData = data,
@@ -343,13 +347,164 @@ class ProperKalman(val Timestamp: Double,
             )
         }
         println("got to end with no crash: $longitudeEastKalmanFilter")
-        writeJsonSerializableToFile(outputs, "finalOut.json")
+        //writeJsonSerializableToFile(outputs, "finalOut.json")
+    }
+    fun getSmoothedLatLngList(): List<com.google.android.gms.maps.model.LatLng> {
+        val smoothedLatLngList = mutableListOf<com.google.android.gms.maps.model.LatLng>()
+        for (i in smoothedLatitudes.indices) {
+            smoothedLatLngList.add(
+                com.google.android.gms.maps.model.LatLng(
+                    smoothedLatitudes[i],
+                    smoothedLongitudes[i]
+                )
+            )
+            Log.d("koord: ", com.google.android.gms.maps.model.LatLng(
+                smoothedLatitudes[i],
+                smoothedLongitudes[i]
+            ).toString())
+        }
+        return smoothedLatLngList
     }
 
+    private fun generateSensorDataList(): List<SensorData> {
+        val sensorDataList = mutableListOf<SensorData>()
 
+        // Iterate through each index of the arrays
+        for (i in Timestamps.indices) {
+            // Create a new SensorData object and populate its fields
+            val sensorData = SensorData(
+                Timestamps[i].toDouble(), // Convert Long to Double
+                GpsLats[i],
+                GpsLons[i],
+                GpsAlts[i],
+                AbsNorthAccs[i],
+                AbsEastAccs[i],
+                AbsUpAccs[i],
+                VelsNorth[i],
+                VelsEast[i],
+                VelsDown[i],
+                VelsError[i],
+                AltitudesError[i]
+            )
+
+            // Add the SensorData object to the list
+            sensorDataList.add(sensorData)
+        }
+        return sensorDataList
+    }
+    private fun createWindows(timeThreshold: Long): List<Int>{
+        val windows = mutableListOf<Int>()
+        val indexesInWindows = mutableListOf<Int>()
+        var windowIndex = 0
+        var lastIndex: Int
+        var index = 0
+        val ungroupedIndexes = mutableListOf<Int>()
+        var incrementRate = 0.001
+        var incrementTimeRate: Long = 1000
+        while (index < GpsLats.size) {
+            var windowSize = 1 // Rozmiar aktualnego okna
+            while (index < latitudes.size - 1 &&
+                isSimilar(latitudes[index], longitudes[index], latitudes[index + 1], longitudes[index + 1], threshold)) {
+                if(index !in indexesInWindows) {
+                    windowSize++
+                    indexesInWindows.add(index)
+                    groupIndexMap[index] = windowIndex
+                }
+                index++
+            }
+            if(index == 0){
+                lastIndex = 1
+                index = 1
+                Log.d("index", 0.toString())
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    groupIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+                //index = 0
+            }
+            else{
+                lastIndex = index
+                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
+                {
+                    groupIndexMap[lastIndex] = windowIndex
+                    indexesInWindows.add(lastIndex)
+                }
+            }
+
+            // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
+            while (index < latitudes.size - 1)
+            {   index++
+                if(isSimilar(latitudes[lastIndex], longitudes[lastIndex], latitudes[index], longitudes[index], threshold) && index !in indexesInWindows) {
+                    windowSize++
+                    indexesInWindows.add(index)
+                    groupIndexMap[index] = windowIndex
+
+                }
+            }
+            index = lastIndex
+            // Dodajemy rozmiar aktualnego okna do listy okien, jeśli jest większy niż 1
+            if (windowSize > 1) {
+                windows.add(windowSize)
+                windowIndex ++
+            }
+
+            index++
+        }
+        ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
+        var diff = 10.0
+        var oldDiff = diff
+        while(ungroupedIndexes.size>0) {
+            val foundIndex: MutableList<Int> = mutableListOf()
+            Log.d("Oprozniamy", ungroupedIndexes.toString())
+            ungroupedIndexes.forEach {
+                for(tmp in indexesInWindows)
+                {
+                    // Przeszukanie indexesInWindows w poszukiwaniu najbliższego indeksu
+                    if (isSimilar(
+                            latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp],
+                            (threshold + incrementRate)
+                        )
+                    )
+                    // Jeśli znaleziono najbliższy indeks
+                    {
+                        diff = similarityVal(latitudes[it],
+                            longitudes[it],
+                            latitudes[tmp],
+                            longitudes[tmp])
+                        if(diff<oldDiff)
+                        {
+                            oldDiff = diff
+                            val group = groupIndexMap[tmp]
+                            if (group != null) {
+                                groupIndexMap[it] = group
+                                foundIndex.add(it)
+                            }
+                        }
+
+                    }
+                    else if(it !in foundIndex && isSimilarTime(timeStamps[it], timeStamps[tmp], timeThreshold + incrementTimeRate)){
+                        //Log.d("Dorzucam", "na podstawie czasu dla $it")
+                        val group = groupIndexMap[tmp]
+                        if (group != null) {
+                            groupIndexMap[it] = group
+                            foundIndex.add(it)
+                        }
+                    }
+                }
+                oldDiff = 1.0
+            }
+            ungroupedIndexes.removeAll(foundIndex)
+            incrementRate+=incrementRate
+            incrementTimeRate+=incrementTimeRate
+        }
+        return windows
+    }
 }
 
 typealias Degrees = Double
 
-typealias Radians = Double
-*/
+typealias Radians = Double*/

@@ -26,6 +26,7 @@ import java.util.*
 
 class MainActivity : AppCompatActivity() {
     private lateinit var tv_lat: TextView
+    private lateinit var tv_azm: TextView
     private lateinit var tv_lon: TextView
     private lateinit var tv_altitude: TextView
     private lateinit var tv_accuracy: TextView
@@ -42,10 +43,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spinner: Spinner
     private var x= 0.0
     private var y = 0.0
+    private var z = 0.0
+    private var currentRotationMatrix = FloatArray(9)
+    private var orientationValues = FloatArray(3)
+    private lateinit var accelerometerValues: FloatArray
+    private lateinit var magnetometerValues: FloatArray
+    private lateinit var gyroscopeValues: FloatArray
+    private var previousTimestamp: Long = 0
+    private var alpha = 0.1f // Współczynnik filtru komplementarnego
+    // Poprzednia wartość kąta azymutu
+    private var previousAzimuth = 0f
+    // Poprzednie wartości kątów orientacji
+    private var previousOrientationValues = FloatArray(3)
+
     private lateinit var accelerometerSensor: Sensor
+    private lateinit var magnetometerSensor: Sensor
+    private lateinit var gyroscopeSensor: Sensor
     private lateinit var sensorManager: SensorManager
     var updateOn = true
-
+    private var filteredAzimuth = 0.0f
     //current location
     private lateinit var currLocation: Location
     private lateinit var myCurrLocation: MyLocation
@@ -78,6 +94,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         tv_lat = findViewById(R.id.tv_lat)
+        tv_azm = findViewById(R.id.tv_azmVal)
         tv_lon = findViewById(R.id.tv_lon)
         tv_altitude = findViewById(R.id.tv_altitude)
         tv_accuracy = findViewById(R.id.tv_accuracy)
@@ -94,6 +111,8 @@ class MainActivity : AppCompatActivity() {
         spinner = findViewById(R.id.spinner_smoothing_algorithm)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        magnetometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
         handler.postDelayed(runnable, delay)
         val adapter: ArrayAdapter<CharSequence> = ArrayAdapter.createFromResource(
@@ -174,18 +193,65 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         sensorManager.registerListener(accelerometerListener, accelerometerSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH, SensorManager.SENSOR_DELAY_FASTEST)
+        sensorManager.registerListener(magnetometerListener, magnetometerSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH, SensorManager.SENSOR_DELAY_FASTEST)
+        sensorManager.registerListener(gyroscopeListener, gyroscopeSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH, SensorManager.SENSOR_DELAY_FASTEST)
     }
     private val accelerometerListener = object : SensorEventListener{
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
                 x = event.values[0].toDouble()
                 y = event.values[1].toDouble()
-                var z = event.values[2].toDouble()
+                z = event.values[2].toDouble()
                 //updateGPS()
+                accelerometerValues = event.values.clone()
             }
         }
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             // Metoda wywoływana, gdy dokładność sensora ulegnie zmianie
+        }
+    }
+    private val magnetometerListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+                // Zbieraj dane z magnetometru
+                val xMagneticField = event.values[0]
+                val yMagneticField = event.values[1]
+                val zMagneticField = event.values[2]
+                magnetometerValues = event.values.clone()
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+            // Obsłuż zmianę dokładności sensora, jeśli to konieczne
+        }
+    }
+
+    private val gyroscopeListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+                // Aktualizuj odpowiednie pola lub wykonaj inne operacje z danymi z żyroskopu
+                gyroscopeValues = event.values.clone()
+                if (accelerometerValues != null && magnetometerValues != null && gyroscopeValues != null) {
+                    SensorManager.getRotationMatrix(currentRotationMatrix, null, accelerometerValues, magnetometerValues)
+                    SensorManager.getOrientation(currentRotationMatrix, orientationValues)
+
+                    // Obliczamy wartość kąta na podstawie wartości zwróconej przez SensorManager.getOrientation
+                    val azimuth = Math.toDegrees(orientationValues[0].toDouble()).toFloat()
+
+                    // Zastosowanie filtru komplementarnego na podstawie danych z żyroskopu
+                    // Nowa wartość kąta = alpha * nowa wartość kąta + (1 - alpha) * (poprzednia wartość kąta + zmiana z żyroskopu)
+                    val gyroscopeDelta = gyroscopeValues[2] * (event.timestamp - previousTimestamp) / 1000000000 // Delta obrotu wokół osi Z
+                    filteredAzimuth = alpha * azimuth + (1 - alpha) * (previousAzimuth + gyroscopeDelta)
+                    previousAzimuth = filteredAzimuth
+                    Log.d("kąt", "taki: $filteredAzimuth")
+                    // Aktualizujemy poprzednie wartości
+                    previousOrientationValues = orientationValues.clone()
+                    previousTimestamp = event.timestamp
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+            // Obsłuż zmianę dokładności sensora, jeśli to konieczne
         }
     }
 
@@ -205,6 +271,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopLocationUpdates() {
         tv_updates!!.text = "Location in NOT being tracked"
         tv_lat!!.text = "Location tracking disabled"
+        tv_azm!!.text = "Location tracking disabled"
         tv_lon!!.text = "Location tracking disabled"
         tv_speed!!.text = "Location tracking disabled"
         tv_address!!.text = "Location tracking disabled"
@@ -252,12 +319,14 @@ class MainActivity : AppCompatActivity() {
                         currLocation = location
                         myCurrLocation = MyLocation("")
                         myCurrLocation.accuracy = currLocation.accuracy
+                        myCurrLocation.azimuth = filteredAzimuth
                         myCurrLocation.altitude = currLocation.altitude
                         myCurrLocation.time = currLocation.time
                         myCurrLocation.latitude = currLocation.latitude
                         myCurrLocation.longitude = currLocation.longitude
-                        myCurrLocation.velocityX = x
-                        myCurrLocation.velocityY = y
+                        myCurrLocation.accelerationX = x
+                        myCurrLocation.accelerationY = y
+                        myCurrLocation.accelerationZ = z
                         savedLocations.add(myCurrLocation)
                         //we got permission. Put the values of location. XXX into the UI components.
                         updateUIValues(location)
@@ -281,13 +350,14 @@ class MainActivity : AppCompatActivity() {
         tv_lat!!.text = location.latitude.toString()
         tv_lon!!.text = location.longitude.toString()
         tv_accuracy!!.text = location.accuracy.toString()
+        tv_azm!!.text = myCurrLocation.azimuth.toString()
         if (location.hasAltitude()) {
             tv_altitude!!.text = location.altitude.toString()
         } else {
             tv_altitude!!.text = "Not available on this device"
         }
-        if (myCurrLocation.velocityX != null) {
-            tv_speed!!.text = "x: " + myCurrLocation.velocityX.toString() + "y: " + myCurrLocation.velocityY.toString()
+        if (myCurrLocation.accelerationX != null) {
+            tv_speed!!.text = "x: " + myCurrLocation.accelerationX.toString() + "y: " + myCurrLocation.accelerationY.toString()
         } else {
             tv_speed!!.text = "Not available on this device"
         }

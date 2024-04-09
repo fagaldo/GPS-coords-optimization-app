@@ -24,10 +24,18 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
     private var smoothedLatLngList: List<LatLng>? = null
     private var latitudes: MutableList<Double> = arrayListOf()
     private var longitudes: MutableList<Double> = arrayListOf()
+    private var altitudes: MutableList<Double> = arrayListOf()
     private var accX: MutableList<Double> = arrayListOf()
     private var accY: MutableList<Double> = arrayListOf()
+    private var accZ: MutableList<Double> = arrayListOf()
     private var times: MutableList<Long> = arrayListOf()
     private var accuracies: MutableList<Float> = arrayListOf()
+    private var azimuths: MutableList<Float> = arrayListOf()
+    private var velsNorth: MutableList<Double> = arrayListOf()
+    private var velsEast: MutableList<Double> = arrayListOf()
+    private var velsDown: MutableList<Double> = arrayListOf()
+    private var velsError: MutableList<Double> = arrayListOf()
+    private var altsError: MutableList<Double> = arrayListOf()
     private var selectedAlgorithm: String? = null
     private lateinit var groups: Map<Int, List<Int>>
     private lateinit var mae: DoubleArray
@@ -68,10 +76,13 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
         for (location in savedLocations!!){
             latitudes.add(location.latitude)
             longitudes.add(location.longitude)
-            location.velocityX?.let { accX.add(it) }
-            location.velocityY?.let { accY.add(it) }
+            location.accelerationX?.let { accX.add(it) }
+            location.accelerationY?.let { accY.add(it) }
+            location.accelerationZ?.let { accZ.add(it) }
+            altitudes.add(location.altitude)
             times.add(location.time)
             accuracies.add(location.accuracy)
+            location.azimuth?.let { azimuths.add(it) }
         }
         mMap = googleMap
         trueLats[0] = 50.13489
@@ -110,19 +121,44 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                 groups = gpsMA.getGroups()
                 mae = gpsMA.getMAE()
             }
-            "Simple Kalman Filter" -> {
+            "MA with sensory fusion" -> {
+                val gpsMAS = GpsMovingAvgWithAzimuth(latitudes.toDoubleArray(),
+                    longitudes.toDoubleArray(),
+                    0.00189,
+                    trueLats,
+                    trueLongs,
+                    times, azimuths)
+                gpsMAS.smoothAndEvaluateAndGroup()
+                smoothedLatLngList = gpsMAS.getSmoothedLatLngList()
+                groups = gpsMAS.getGroups()
+                mae = gpsMAS.getMAE()
+            }
+            "Kalman Filter" -> {
                 val gpsKF = GpsKalmanPostProcessing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
                     accX,
                     accY,
                     0.00189,
                     trueLats,
-                    trueLongs, times, 3.0f, accuracies)
+                    trueLongs, times, 3.0f, accuracies, azimuths)
                 gpsKF.smoothAndEvaluateAndGroup()
                 smoothedLatLngList=gpsKF.getCorrectedLatLngList()
                 groups = gpsKF.getGroups()
                 mae = gpsKF.getMAE()
             }
+            /*"Enhanced Kalman Filter" -> {
+                val size = times.size
+                val tmpVelsError = MutableList(size) {0.0}
+                val tmpAltsError = MutableList(size) {0.0}
+                val velNorthTmp = MutableList(size) {0.0}
+                val velEastTmp = MutableList(size) {0.0}
+                val velDownTmp = MutableList(size) {0.0}
+                val gpsKFE = ProperKalman(times, latitudes.toDoubleArray(), longitudes.toDoubleArray(),
+                altitudes.toDoubleArray(), accX, accY, accZ, velNorthTmp, velEastTmp, velDownTmp,
+                    tmpVelsError, tmpAltsError)
+                gpsKFE.main()
+                smoothedLatLngList = gpsKFE.getSmoothedLatLngList()
+            }*/
             else -> {
                 val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),

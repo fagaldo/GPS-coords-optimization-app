@@ -197,7 +197,7 @@ class GPSMovingAvgFuzzySmoothing(
         val distanceX = abs(x - s)
         val distanceY = abs(y - r)
         val weightX = exp(-(distanceX / a).pow(2))
-        val weightY = exp(-(distanceY / b).pow(2)) //TODO ciekawostka
+        val weightY = exp(-(distanceY / b).pow(2))
         return weightX * weightY
     }
     private fun calculateMedianCenter(groupId: Int): LatLng {

@@ -2,7 +2,7 @@
 <resources><string-array name="smoothing_algorithms">
     <item>LOWESS</item>
     <item>Simple MA</item>
-    <item>Simple Kalman Filter</item>
-    <item>MA with Fuzzy logic</item>
-    <item>Enhanced Kalman Filter</item>
+    <item>Kalman Filter</item>
+    <item>MA with fuzzy logic</item>
+    <item>MA with sensory fusion</item>
 </string-array></resources>
