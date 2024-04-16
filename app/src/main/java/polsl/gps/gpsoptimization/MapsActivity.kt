@@ -31,11 +31,6 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
     private var times: MutableList<Long> = arrayListOf()
     private var accuracies: MutableList<Float> = arrayListOf()
     private var azimuths: MutableList<Float> = arrayListOf()
-    private var velsNorth: MutableList<Double> = arrayListOf()
-    private var velsEast: MutableList<Double> = arrayListOf()
-    private var velsDown: MutableList<Double> = arrayListOf()
-    private var velsError: MutableList<Double> = arrayListOf()
-    private var altsError: MutableList<Double> = arrayListOf()
     private var selectedAlgorithm: String? = null
     private lateinit var groups: Map<Int, List<Int>>
     private lateinit var mae: DoubleArray

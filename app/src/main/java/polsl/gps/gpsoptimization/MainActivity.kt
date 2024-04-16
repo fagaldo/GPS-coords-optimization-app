@@ -22,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.*
 import java.util.*
+import kotlin.collections.ArrayList
 
 
 class MainActivity : AppCompatActivity() {
@@ -46,9 +47,9 @@ class MainActivity : AppCompatActivity() {
     private var z = 0.0
     private var currentRotationMatrix = FloatArray(9)
     private var orientationValues = FloatArray(3)
-    private lateinit var accelerometerValues: FloatArray
-    private lateinit var magnetometerValues: FloatArray
-    private lateinit var gyroscopeValues: FloatArray
+    private var accelerometerValues: FloatArray? = null
+    private var magnetometerValues: FloatArray? = null
+    private var gyroscopeValues: FloatArray? = null
     private var previousTimestamp: Long = 0
     private var alpha = 0.1f // Współczynnik filtru komplementarnego
     // Poprzednia wartość kąta azymutu
@@ -56,9 +57,9 @@ class MainActivity : AppCompatActivity() {
     // Poprzednie wartości kątów orientacji
     private var previousOrientationValues = FloatArray(3)
 
-    private lateinit var accelerometerSensor: Sensor
-    private lateinit var magnetometerSensor: Sensor
-    private lateinit var gyroscopeSensor: Sensor
+    private var accelerometerSensor: Sensor? = null
+    private var magnetometerSensor: Sensor? = null
+    private var gyroscopeSensor: Sensor? = null
     private lateinit var sensorManager: SensorManager
     var updateOn = true
     private var filteredAzimuth = 0.0f
@@ -91,6 +92,7 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
         savedLocations = ArrayList()
+        magnetometerValues = FloatArray(10)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         tv_lat = findViewById(R.id.tv_lat)
@@ -113,6 +115,25 @@ class MainActivity : AppCompatActivity() {
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        // Ensure you check if the sensors are null before using them
+        if (accelerometerSensor == null) {
+            // Handle the absence of an accelerometer
+            do {
+                accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            }while(accelerometerSensor == null)
+        }
+        if (magnetometerSensor == null) {
+            // Handle the absence of a magnetometer
+            do {
+                magnetometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+            }while(magnetometerSensor == null)
+        }
+        if (gyroscopeSensor == null) {
+            // Handle the absence of a gyroscope
+            do {
+                gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+            } while (gyroscopeSensor == null)
+        }
 
         handler.postDelayed(runnable, delay)
         val adapter: ArrayAdapter<CharSequence> = ArrayAdapter.createFromResource(
@@ -213,10 +234,6 @@ class MainActivity : AppCompatActivity() {
     private val magnetometerListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
             if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
-                // Zbieraj dane z magnetometru
-                val xMagneticField = event.values[0]
-                val yMagneticField = event.values[1]
-                val zMagneticField = event.values[2]
                 magnetometerValues = event.values.clone()
             }
         }
@@ -240,7 +257,7 @@ class MainActivity : AppCompatActivity() {
 
                     // Zastosowanie filtru komplementarnego na podstawie danych z żyroskopu
                     // Nowa wartość kąta = alpha * nowa wartość kąta + (1 - alpha) * (poprzednia wartość kąta + zmiana z żyroskopu)
-                    val gyroscopeDelta = gyroscopeValues[2] * (event.timestamp - previousTimestamp) / 1000000000 // Delta obrotu wokół osi Z
+                    val gyroscopeDelta = gyroscopeValues!![2] * (event.timestamp - previousTimestamp) / 1000000000 // Delta obrotu wokół osi Z
                     filteredAzimuth = alpha * azimuth + (1 - alpha) * (previousAzimuth + gyroscopeDelta)
                     previousAzimuth = filteredAzimuth
                     Log.d("kąt", "taki: $filteredAzimuth")
@@ -248,6 +265,7 @@ class MainActivity : AppCompatActivity() {
                     previousOrientationValues = orientationValues.clone()
                     previousTimestamp = event.timestamp
                 }
+                else{Log.d("null", "null")}
             }
         }
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
