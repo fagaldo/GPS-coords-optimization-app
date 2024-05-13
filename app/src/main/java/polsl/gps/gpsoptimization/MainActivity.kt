@@ -92,7 +92,6 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
         savedLocations = ArrayList()
-        magnetometerValues = FloatArray(10)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         tv_lat = findViewById(R.id.tv_lat)
@@ -248,7 +247,7 @@ class MainActivity : AppCompatActivity() {
             if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
                 // Aktualizuj odpowiednie pola lub wykonaj inne operacje z danymi z żyroskopu
                 gyroscopeValues = event.values.clone()
-                if (accelerometerValues != null && magnetometerValues != null && gyroscopeValues != null) {
+                if (accelerometerValues != null && magnetometerValues != null && gyroscopeValues != null && updateOn) {
                     SensorManager.getRotationMatrix(currentRotationMatrix, null, accelerometerValues, magnetometerValues)
                     SensorManager.getOrientation(currentRotationMatrix, orientationValues)
 
