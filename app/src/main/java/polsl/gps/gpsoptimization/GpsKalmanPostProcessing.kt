@@ -160,112 +160,115 @@ class GpsKalmanPostProcessing(
     private fun createWindows(timeThreshold: Long): List<Int>{
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
-        var windowIndex = 0
-        var lastIndex: Int
-        var index = 0
         val ungroupedIndexes = mutableListOf<Int>()
-        var incrementRate = 0.001
-        var incrementTimeRate: Long = 1000
-        while (index < latitudes.size) {
-            var windowSize = 1 // Rozmiar aktualnego okna
-            while (index < latitudes.size - 1 &&
-                isSimilar(latitudes[index], longitudes[index], latitudes[index + 1], longitudes[index + 1], threshold)) {
-                if(index !in indexesInWindows) {
-                    windowSize++
-                    indexesInWindows.add(index)
-                    groupIndexMap[index] = windowIndex
-                }
-                index++
-            }
-            if(index == 0){
-                lastIndex = 1
-                index = 1
-                Log.d("index", 0.toString())
-                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
-                {
-                    groupIndexMap[lastIndex] = windowIndex
-                    indexesInWindows.add(lastIndex)
-                }
-                //index = 0
-            }
-            else{
-                lastIndex = index
-                if(isSimilar(latitudes[index-1], longitudes[index-1], latitudes[lastIndex], longitudes[lastIndex], threshold) && lastIndex !in indexesInWindows)
-                {
-                    groupIndexMap[lastIndex] = windowIndex
-                    indexesInWindows.add(lastIndex)
-                }
-            }
+        var incrementRate = 0.01
+        var incrementTimeRate: Long = 10
 
-            // Sprawdzamy, czy kolejne punkty nie są zbyt odległe pod względem indeksu i spełniają warunek podobieństwa
-            while (index < latitudes.size - 1)
-            {   index++
-                if(isSimilar(latitudes[lastIndex], longitudes[lastIndex], latitudes[index], longitudes[index], threshold) && index !in indexesInWindows) {
-                    windowSize++
-                    indexesInWindows.add(index)
-                    groupIndexMap[index] = windowIndex
+        var windowSize = 1 // Rozmiar aktualnego okna
+        var currentGroupIndex = 0
+        for (i in 0 until latitudes.size) {
+            for (j in 0 until latitudes.size) {
+                Log.d("Porownanie", "Porownuje i: $i z j: $j")
+                if (isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
+                    && isSimilarTime(timeStamps[i], timeStamps[j], 2000) && i!=j) {
+                    Log.d("Podobienstwo", "Znaleziona podobna para: ($i, $j)")
 
+                    // Sprawdzamy, czy którykolwiek z indeksów jest już w jakiejś grupie
+                    val groupI = groupIndexMap[i]
+                    val groupJ = groupIndexMap[j]
+
+                    if (groupI == null && groupJ == null) {
+                        // Żaden z punktów nie jest jeszcze w grupie, tworzymy nową grupę
+                        groupIndexMap[i] = currentGroupIndex
+                        groupIndexMap[j] = currentGroupIndex
+                        indexesInWindows.add(i)
+                        indexesInWindows.add(j)
+                        windowSize += 2
+                        windows.add(windowSize)
+                        Log.d("Tworze grupe", "Index: $i, $j, Grupa: $currentGroupIndex")
+                        currentGroupIndex++
+                    } else if (groupI != null && groupJ == null) {
+                        // i jest w grupie, dodajemy j do tej samej grupy
+                        groupIndexMap[j] = groupI
+                        indexesInWindows.add(j)
+                        windowSize++
+                        windows.add(windowSize)
+                        Log.d("Dodaje do grupy", "Index: $j, Grupa: $groupI")
+                    } else if (groupI == null && groupJ != null) {
+                        // j jest w grupie, dodajemy i do tej samej grupy
+                        groupIndexMap[i] = groupJ
+                        indexesInWindows.add(i)
+                        windowSize++
+                        windows.add(windowSize)
+                        Log.d("Dodaje do grupy", "Index: $i, Grupa: $groupJ")
+                    } else {
+                        // Oba punkty są już w grupach
+                        Log.d("Oba punkty w grupach", "Index: $i, Grupa: $groupI, Index: $j, Grupa: $groupJ")
+                    }
                 }
             }
-            index = lastIndex
-            // Dodajemy rozmiar aktualnego okna do listy okien, jeśli jest większy niż 1
-            if (windowSize > 1) {
-                windows.add(windowSize)
-                windowIndex ++
-            }
-
-            index++
         }
+
+// Dodaj wszystkie nieprzypisane indeksy do ungroupedIndexes
         ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
-        var diff = 10.0
+
+        var diff = 5.0
         var oldDiff = diff
-        while(ungroupedIndexes.size>0) {
-            val foundIndex: MutableList<Int> = mutableListOf()
+
+        while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
-            ungroupedIndexes.forEach {
-                for(tmp in indexesInWindows)
-                {
-                    // Przeszukanie indexesInWindows w poszukiwaniu najbliższego indeksu
-                    if (isSimilar(
-                            latitudes[it],
-                            longitudes[it],
-                            latitudes[tmp],
-                            longitudes[tmp],
-                            (threshold + incrementRate)
-                        )
-                    )
-                    // Jeśli znaleziono najbliższy indeks
-                    {
-                        diff = similarityVal(latitudes[it],
-                            longitudes[it],
-                            latitudes[tmp],
-                            longitudes[tmp])
-                        if(diff<oldDiff)
-                        {
+            Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
+
+            val iterator = ungroupedIndexes.iterator()
+            while (iterator.hasNext()) {
+                val itIndex = iterator.next()
+                var isAssigned = false
+
+                for (tmp in indexesInWindows) {
+                    // Sprawdzenie podobieństwa geograficznego i czasowego
+                    if (isSimilar(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp], threshold + incrementRate)
+                        && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], 1000)) {
+
+                        // Obliczenie różnicy dla znalezionego podobnego indeksu
+                        diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp])
+                        if (diff < oldDiff) {
                             oldDiff = diff
+                            Log.d("DorzucamG", "na podstawie geografii dla $itIndex")
                             val group = groupIndexMap[tmp]
                             if (group != null) {
-                                groupIndexMap[it] = group
-                                foundIndex.add(it)
+                                groupIndexMap[itIndex] = group
+                                indexesInWindows.add(itIndex) // Dodaj do indeksów w oknach
+                                iterator.remove() // Usuń przetworzony indeks z ungroupedIndexes
+                                isAssigned = true
+                                break
                             }
                         }
-
-                    }
-                    else if(it !in foundIndex && isSimilarTime(timeStamps[it], timeStamps[tmp], timeThreshold + incrementTimeRate)){
-                        //Log.d("Dorzucam", "na podstawie czasu dla $it")
+                    } else if (!isAssigned && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], timeThreshold + incrementTimeRate)) {
+                        // Dodanie na podstawie czasu, jeśli nie znaleziono na podstawie podobieństwa geograficznego
+                        Log.d("Dorzucam", "na podstawie czasu dla $itIndex")
                         val group = groupIndexMap[tmp]
                         if (group != null) {
-                            groupIndexMap[it] = group
-                            foundIndex.add(it)
+                            groupIndexMap[itIndex] = group
+                            indexesInWindows.add(itIndex) // Dodaj do indeksów w oknach
+                            iterator.remove() // Usuń przetworzony indeks z ungroupedIndexes
+                            isAssigned = true
+                            break
                         }
                     }
                 }
-                oldDiff = 1.0
+
+                oldDiff = 5.0 // Resetowanie oldDiff po przetworzeniu każdego indeksu
             }
-            ungroupedIndexes.removeAll(foundIndex)
-            incrementRate+=incrementRate
-            incrementTimeRate+=incrementTimeRate
+
+            // Zwiększanie wartości progów
+            incrementRate += incrementRate
+            incrementTimeRate += incrementTimeRate
+
+            Log.d("XD", incrementRate.toString())
         }
+
+
+
         return windows
     }
     private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{

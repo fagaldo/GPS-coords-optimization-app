@@ -94,12 +94,12 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                 val gpsLowess = GpsLowessSmoothing(
                     latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.01, //im mniejszy ten parametr, tym bardziej znaczące są odchyły i bardziej będą się różnić zwracane wartości
+                    0.0001, //im mniejszy ten parametr, tym bardziej znaczące są odchyły i bardziej będą się różnić zwracane wartości
                     trueLats,
                     trueLongs,
                     times
                 )
-                gpsLowess.smoothAndEvaluateAndGroup(0.00189)
+                gpsLowess.smoothAndEvaluateAndGroup(0.00125)
                 smoothedLatLngList = gpsLowess.getSmoothedLatLngList()
                 groups = gpsLowess.getGroups()
                 mae = gpsLowess.getMAE()
@@ -107,7 +107,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             "Simple MA" -> {
                 val gpsMA = GpsMovingAvgSmoothing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.00189,
+                    0.00125,
                     trueLats,
                     trueLongs,
                     times)
@@ -119,7 +119,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             "MA with sensory fusion" -> {
                 val gpsMAS = GpsMovingAvgWithAzimuth(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.00189,
+                    0.00125,
                     trueLats,
                     trueLongs,
                     times, azimuths)
@@ -133,7 +133,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                     longitudes.toDoubleArray(),
                     accX,
                     accY,
-                    0.00189,
+                    0.00125,
                     trueLats,
                     trueLongs, times, 3.0f, accuracies, azimuths)
                 gpsKF.smoothAndEvaluateAndGroup()
@@ -157,7 +157,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
             else -> {
                 val gpsMA = GPSMovingAvgFuzzySmoothing(latitudes.toDoubleArray(),
                     longitudes.toDoubleArray(),
-                    0.00189,
+                    0.00125,
                     trueLats,
                     trueLongs, times)
                 gpsMA.smoothAndEvaluateAndGroup()
