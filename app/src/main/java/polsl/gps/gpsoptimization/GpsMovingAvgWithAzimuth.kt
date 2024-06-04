@@ -20,7 +20,7 @@ class GpsMovingAvgWithAzimuth(
 
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
-        createWindows(1000)
+        createWindows(100, 10)
         for (i in latitudes.indices) {
             val smoothedCoordinate = movingAverage(i)
             smoothedLatitudes[i] = smoothedCoordinate.first
@@ -32,60 +32,58 @@ class GpsMovingAvgWithAzimuth(
             }
         }
     }
-    private fun createWindows(timeThreshold: Long): List<Int>{
+    private fun createWindows(timeThreshold: Long, maxGroupSize: Int): List<Int> {
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         val ungroupedIndexes = mutableListOf<Int>()
-        var incrementRate = 0.01
+        var incrementRate = 0.00001
         var incrementTimeRate: Long = 10
 
-        var windowSize = 1 // Rozmiar aktualnego okna
         var currentGroupIndex = 0
+        val groupSizes = mutableMapOf<Int, Int>()
+
         for (i in 0 until latitudes.size) {
             for (j in 0 until latitudes.size) {
                 Log.d("Porownanie", "Porownuje i: $i z j: $j")
-                if (isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
-                    && isSimilarTime(timeStamps[i], timeStamps[j], 2000) && i!=j) {
+                if (i != j && isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
+                    && isSimilarTime(timeStamps[i], timeStamps[j], 2000)) {
                     Log.d("Podobienstwo", "Znaleziona podobna para: ($i, $j)")
 
-                    // Sprawdzamy, czy którykolwiek z indeksów jest już w jakiejś grupie
                     val groupI = groupIndexMap[i]
                     val groupJ = groupIndexMap[j]
 
                     if (groupI == null && groupJ == null) {
-                        // Żaden z punktów nie jest jeszcze w grupie, tworzymy nową grupę
                         groupIndexMap[i] = currentGroupIndex
                         groupIndexMap[j] = currentGroupIndex
                         indexesInWindows.add(i)
                         indexesInWindows.add(j)
-                        windowSize += 2
-                        windows.add(windowSize)
+                        windows.add(currentGroupIndex)
+                        groupSizes[currentGroupIndex] = 2
                         Log.d("Tworze grupe", "Index: $i, $j, Grupa: $currentGroupIndex")
                         currentGroupIndex++
                     } else if (groupI != null && groupJ == null) {
-                        // i jest w grupie, dodajemy j do tej samej grupy
-                        groupIndexMap[j] = groupI
-                        indexesInWindows.add(j)
-                        windowSize++
-                        windows.add(windowSize)
-                        Log.d("Dodaje do grupy", "Index: $j, Grupa: $groupI")
+                        if (groupSizes[groupI]!! < maxGroupSize) {
+                            groupIndexMap[j] = groupI
+                            indexesInWindows.add(j)
+                            groupSizes[groupI] = groupSizes[groupI]!! + 1
+                            Log.d("Dodaje do grupy", "Index: $j, Grupa: $groupI")
+                        }
                     } else if (groupI == null && groupJ != null) {
-                        // j jest w grupie, dodajemy i do tej samej grupy
-                        groupIndexMap[i] = groupJ
-                        indexesInWindows.add(i)
-                        windowSize++
-                        windows.add(windowSize)
-                        Log.d("Dodaje do grupy", "Index: $i, Grupa: $groupJ")
+                        if (groupSizes[groupJ]!! < maxGroupSize) {
+                            groupIndexMap[i] = groupJ
+                            indexesInWindows.add(i)
+                            groupSizes[groupJ] = groupSizes[groupJ]!! + 1
+                            Log.d("Dodaje do grupy", "Index: $i, Grupa: $groupJ")
+                        }
                     } else {
-                        // Oba punkty są już w grupach
                         Log.d("Oba punkty w grupach", "Index: $i, Grupa: $groupI, Index: $j, Grupa: $groupJ")
                     }
                 }
             }
         }
 
-// Dodaj wszystkie nieprzypisane indeksy do ungroupedIndexes
         ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
+        Log.d("Nieprzypisane indeksy", ungroupedIndexes.toString())
 
         var diff = 5.0
         var oldDiff = diff
@@ -95,57 +93,61 @@ class GpsMovingAvgWithAzimuth(
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
 
             val iterator = ungroupedIndexes.iterator()
+            val foundIndex = mutableListOf<Int>()
+
             while (iterator.hasNext()) {
                 val itIndex = iterator.next()
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    // Sprawdzenie podobieństwa geograficznego i czasowego
                     if (isSimilar(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp], threshold + incrementRate)
                         && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], 1000)) {
 
-                        // Obliczenie różnicy dla znalezionego podobnego indeksu
                         diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp])
                         if (diff < oldDiff) {
                             oldDiff = diff
                             Log.d("DorzucamG", "na podstawie geografii dla $itIndex")
                             val group = groupIndexMap[tmp]
-                            if (group != null) {
+                            if (group != null && groupSizes[group]!! < maxGroupSize) {
                                 groupIndexMap[itIndex] = group
-                                indexesInWindows.add(itIndex) // Dodaj do indeksów w oknach
-                                iterator.remove() // Usuń przetworzony indeks z ungroupedIndexes
+                                indexesInWindows.add(itIndex)
+                                foundIndex.add(itIndex)
+                                groupSizes[group] = groupSizes[group]!! + 1
+                                iterator.remove()
                                 isAssigned = true
                                 break
                             }
                         }
                     } else if (!isAssigned && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], timeThreshold + incrementTimeRate)) {
-                        // Dodanie na podstawie czasu, jeśli nie znaleziono na podstawie podobieństwa geograficznego
                         Log.d("Dorzucam", "na podstawie czasu dla $itIndex")
                         val group = groupIndexMap[tmp]
-                        if (group != null) {
+                        if (group != null && groupSizes[group]!! < maxGroupSize) {
                             groupIndexMap[itIndex] = group
-                            indexesInWindows.add(itIndex) // Dodaj do indeksów w oknach
-                            iterator.remove() // Usuń przetworzony indeks z ungroupedIndexes
+                            indexesInWindows.add(itIndex)
+                            foundIndex.add(itIndex)
+                            groupSizes[group] = groupSizes[group]!! + 1
+                            iterator.remove()
                             isAssigned = true
                             break
                         }
                     }
                 }
 
-                oldDiff = 5.0 // Resetowanie oldDiff po przetworzeniu każdego indeksu
+                oldDiff = 5.0
             }
 
-            // Zwiększanie wartości progów
             incrementRate += incrementRate
             incrementTimeRate += incrementTimeRate
 
-            Log.d("XD", incrementRate.toString())
+            Log.d("Aktualny incrementRate", incrementRate.toString())
+            Log.d("Aktualny incrementTime", incrementTimeRate.toString())
         }
-
-
-
+        groupSizes.forEach { (group, size) ->
+            Log.d("Liczebność grupy", "Grupa: $group, Liczebność: $size")
+        }
         return windows
     }
+
 
     private fun movingAverage(index: Int): Pair<Double, Double> {
         var weightedSumLat = 0.0
