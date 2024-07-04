@@ -16,10 +16,11 @@ class GpsMovingAvgSmoothing(
     private val errors = DoubleArray(latitudes.size)
     private val groups = mutableMapOf<Int, MutableList<Int>>()
     private var groupIndexMap = mutableMapOf<Int, Int>()
+    private var maxGroupSize: Int = 6
 
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
-        createWindows(100, 10)
+        createWindows(1000)
         for (i in latitudes.indices) {
             val smoothedCoordinate = movingAverage(i)
             smoothedLatitudes[i] = smoothedCoordinate.first
@@ -31,11 +32,11 @@ class GpsMovingAvgSmoothing(
             }
         }
     }
-    private fun createWindows(timeThreshold: Long, maxGroupSize: Int): List<Int> {
+    private fun createWindows(timeThreshold: Long): List<Int> {
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         val ungroupedIndexes = mutableListOf<Int>()
-        var incrementRate = 0.00001
+        var incrementRate = 0.001
         var incrementTimeRate: Long = 10
 
         var currentGroupIndex = 0
@@ -45,7 +46,7 @@ class GpsMovingAvgSmoothing(
             for (j in 0 until latitudes.size) {
                 Log.d("Porownanie", "Porownuje i: $i z j: $j")
                 if (i != j && isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
-                    && isSimilarTime(timeStamps[i], timeStamps[j], 2000)) {
+                    && isSimilarTime(timeStamps[i], timeStamps[j], 3000)) {
                     Log.d("Podobienstwo", "Znaleziona podobna para: ($i, $j)")
 
                     val groupI = groupIndexMap[i]
@@ -86,7 +87,9 @@ class GpsMovingAvgSmoothing(
 
         var diff = 5.0
         var oldDiff = diff
-
+        var timeDiff:Long = 2000
+        var oldTimeDiff = timeDiff
+        var iteracja = 0
         while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
@@ -99,28 +102,20 @@ class GpsMovingAvgSmoothing(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if (isSimilar(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp], threshold + incrementRate)
-                        && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], 1000)) {
-
-                        diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp])
-                        if (diff < oldDiff) {
-                            oldDiff = diff
-                            Log.d("DorzucamG", "na podstawie geografii dla $itIndex")
-                            val group = groupIndexMap[tmp]
-                            if (group != null && groupSizes[group]!! < maxGroupSize) {
-                                groupIndexMap[itIndex] = group
-                                indexesInWindows.add(itIndex)
-                                foundIndex.add(itIndex)
-                                groupSizes[group] = groupSizes[group]!! + 1
-                                iterator.remove()
-                                isAssigned = true
-                                break
+                    if(iteracja % 1000 == 0)
+                        maxGroupSize++
+                        var group: Int? = null
+                        for(tmp1 in indexesInWindows)
+                        {
+                            diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp1], longitudes[tmp1])
+                            if(diff < oldDiff && groupSizes[groupIndexMap[tmp1]]!! < maxGroupSize) {
+                                oldDiff = diff
+                                group = groupIndexMap[tmp1]
                             }
                         }
-                    } else if (!isAssigned && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], timeThreshold + incrementTimeRate)) {
-                        Log.d("Dorzucam", "na podstawie czasu dla $itIndex")
-                        val group = groupIndexMap[tmp]
+                        Log.d("Obliczony diffG", oldDiff.toString())
                         if (group != null && groupSizes[group]!! < maxGroupSize) {
+                            Log.d("DorzucamG", "na podstawie geografii dla $itIndex do grupy $group")
                             groupIndexMap[itIndex] = group
                             indexesInWindows.add(itIndex)
                             foundIndex.add(itIndex)
@@ -129,14 +124,42 @@ class GpsMovingAvgSmoothing(
                             isAssigned = true
                             break
                         }
+
+                if (!isAssigned) {
+                    for(tmp2 in indexesInWindows)
+                    {
+                        timeDiff = similarityTimeVal(timeStamps[itIndex], timeStamps[tmp2])
+                        if(timeDiff < oldTimeDiff && groupSizes[groupIndexMap[tmp2]]!! < maxGroupSize) {
+                            oldTimeDiff = timeDiff
+                            group = groupIndexMap[tmp2]
+                        }
                     }
+                        Log.d("Obliczony diffT", oldTimeDiff.toString())
+                            if (group != null && (groupSizes[group]!! < maxGroupSize)) {
+                                Log.d("Dorzucam", "na podstawie czasu dla $itIndex do grupy $group granica czas była $oldTimeDiff")
+                                groupIndexMap[itIndex] = group
+                                indexesInWindows.add(itIndex)
+                                foundIndex.add(itIndex)
+                                groupSizes[group] = groupSizes[group]!! + 1
+                                iterator.remove()
+                                isAssigned = true
+                                break
+                            }
+
+                    }
+
                 }
 
                 oldDiff = 5.0
+                oldTimeDiff = 2000 + incrementTimeRate
+                if(oldTimeDiff > 10000) {
+                    oldTimeDiff = 2000
+                    incrementTimeRate = 100
+                }
             }
-
-            incrementRate += incrementRate
-            incrementTimeRate += incrementTimeRate
+            iteracja ++
+            incrementRate += 0.001
+            incrementTimeRate += 100
 
             Log.d("Aktualny incrementRate", incrementRate.toString())
             Log.d("Aktualny incrementTime", incrementTimeRate.toString())
@@ -146,7 +169,20 @@ class GpsMovingAvgSmoothing(
         }
         return windows
     }
+    fun averageDistanceToGroup(
+        lat1: Double, lon1: Double, groupIndex: Int,
+        groupIndexMap: Map<Int, Int>, latitudes: DoubleArray, longitudes: DoubleArray
+    ): Double {
+        val groupPoints = groupIndexMap.filter { it.value == groupIndex }.keys
+        var totalDistance = 0.0
+        var count = 0
 
+        for (pointIndex in groupPoints) {
+            totalDistance += similarityVal(lat1, lon1, latitudes[pointIndex], longitudes[pointIndex])
+            count++
+        }
+        return if (count > 0) totalDistance / count else Double.MAX_VALUE
+    }
     private fun movingAverage(index: Int): Pair<Double, Double> {
         var sumLat = 0.0
         var sumLon = 0.0
@@ -167,6 +203,9 @@ class GpsMovingAvgSmoothing(
     }
     private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{
         return abs(time1- time2) < threshold
+    }
+    private fun similarityTimeVal(time1: Long, time2: Long): Long{
+        return abs(time1- time2)
     }
     private fun isSimilar(
         lat1: Double, lon1: Double,

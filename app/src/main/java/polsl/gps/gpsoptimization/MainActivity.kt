@@ -10,10 +10,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Geocoder
 import android.location.Location
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.*
 import android.util.Log
 import android.view.View
 import android.widget.*
@@ -83,7 +80,7 @@ class MainActivity : AppCompatActivity() {
             // Na przykład:
             if(updateOn)
                 updateGPS()
-
+            Log.d("delay", "1.5s")
             // Zaplanuj ponowne wywołanie po upływie określonego czasu
             handler.postDelayed(this, delay)
         }

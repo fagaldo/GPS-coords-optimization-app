@@ -25,10 +25,11 @@ class GpsKalmanPostProcessing(
     private var groupIndexMap = mutableMapOf<Int, Int>()
     private var prevAccX: Double = 0.0
     private var prevAccY: Double = 0.0
-    var velocityVariance = 1.0 // Initial variance
+    private var velocityVariance = 1.0 // Initial variance
+    private var maxGroupSize: Int = 6
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
-        createWindows(1000, 10)
+        createWindows(1000)
         for (i in latitudes.indices) {
             val correctedCoordinate = process(latitudes[i], longitudes[i], accuracies[i], timeStamps[i],
                 accelerationsX[i], accelerationsY[i], azimuths[i])
@@ -157,11 +158,11 @@ class GpsKalmanPostProcessing(
         return accelerations
     }*/
 
-    private fun createWindows(timeThreshold: Long, maxGroupSize: Int): List<Int> {
+    private fun createWindows(timeThreshold: Long): List<Int> {
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         val ungroupedIndexes = mutableListOf<Int>()
-        var incrementRate = 0.00001
+        var incrementRate = 0.001
         var incrementTimeRate: Long = 10
 
         var currentGroupIndex = 0
@@ -171,7 +172,7 @@ class GpsKalmanPostProcessing(
             for (j in 0 until latitudes.size) {
                 Log.d("Porownanie", "Porownuje i: $i z j: $j")
                 if (i != j && isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
-                    && isSimilarTime(timeStamps[i], timeStamps[j], 2000)) {
+                    && isSimilarTime(timeStamps[i], timeStamps[j], 3000)) {
                     Log.d("Podobienstwo", "Znaleziona podobna para: ($i, $j)")
 
                     val groupI = groupIndexMap[i]
@@ -212,7 +213,9 @@ class GpsKalmanPostProcessing(
 
         var diff = 5.0
         var oldDiff = diff
-
+        var timeDiff:Long = 2000
+        var oldTimeDiff = timeDiff
+        var iteracja = 0
         while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
@@ -225,28 +228,41 @@ class GpsKalmanPostProcessing(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if (isSimilar(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp], threshold + incrementRate)
-                        && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], 1000)) {
-
-                        diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp], longitudes[tmp])
-                        if (diff < oldDiff) {
+                    if(iteracja % 1000 == 0)
+                        maxGroupSize++
+                    var group: Int? = null
+                    for(tmp1 in indexesInWindows)
+                    {
+                        diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp1], longitudes[tmp1])
+                        if(diff < oldDiff && groupSizes[groupIndexMap[tmp1]]!! < maxGroupSize) {
                             oldDiff = diff
-                            Log.d("DorzucamG", "na podstawie geografii dla $itIndex")
-                            val group = groupIndexMap[tmp]
-                            if (group != null && groupSizes[group]!! < maxGroupSize) {
-                                groupIndexMap[itIndex] = group
-                                indexesInWindows.add(itIndex)
-                                foundIndex.add(itIndex)
-                                groupSizes[group] = groupSizes[group]!! + 1
-                                iterator.remove()
-                                isAssigned = true
-                                break
+                            group = groupIndexMap[tmp1]
+                        }
+                    }
+                    Log.d("Obliczony diffG", oldDiff.toString())
+                    if (group != null && groupSizes[group]!! < maxGroupSize) {
+                        Log.d("DorzucamG", "na podstawie geografii dla $itIndex do grupy $group")
+                        groupIndexMap[itIndex] = group
+                        indexesInWindows.add(itIndex)
+                        foundIndex.add(itIndex)
+                        groupSizes[group] = groupSizes[group]!! + 1
+                        iterator.remove()
+                        isAssigned = true
+                        break
+                    }
+
+                    if (!isAssigned) {
+                        for(tmp2 in indexesInWindows)
+                        {
+                            timeDiff = similarityTimeVal(timeStamps[itIndex], timeStamps[tmp2])
+                            if(timeDiff < oldTimeDiff && groupSizes[groupIndexMap[tmp2]]!! < maxGroupSize) {
+                                oldTimeDiff = timeDiff
+                                group = groupIndexMap[tmp2]
                             }
                         }
-                    } else if (!isAssigned && isSimilarTime(timeStamps[itIndex], timeStamps[tmp], timeThreshold + incrementTimeRate)) {
-                        Log.d("Dorzucam", "na podstawie czasu dla $itIndex")
-                        val group = groupIndexMap[tmp]
-                        if (group != null && groupSizes[group]!! < maxGroupSize) {
+                        Log.d("Obliczony diffT", oldTimeDiff.toString())
+                        if (group != null && (groupSizes[group]!! < maxGroupSize)) {
+                            Log.d("Dorzucam", "na podstawie czasu dla $itIndex do grupy $group granica czas była $oldTimeDiff")
                             groupIndexMap[itIndex] = group
                             indexesInWindows.add(itIndex)
                             foundIndex.add(itIndex)
@@ -255,14 +271,21 @@ class GpsKalmanPostProcessing(
                             isAssigned = true
                             break
                         }
+
                     }
+
                 }
 
                 oldDiff = 5.0
+                oldTimeDiff = 2000 + incrementTimeRate
+                if(oldTimeDiff > 10000) {
+                    oldTimeDiff = 2000
+                    incrementTimeRate = 100
+                }
             }
-
-            incrementRate += incrementRate
-            incrementTimeRate += incrementTimeRate
+            iteracja ++
+            incrementRate += 0.001
+            incrementTimeRate += 100
 
             Log.d("Aktualny incrementRate", incrementRate.toString())
             Log.d("Aktualny incrementTime", incrementTimeRate.toString())
@@ -271,6 +294,9 @@ class GpsKalmanPostProcessing(
             Log.d("Liczebność grupy", "Grupa: $group, Liczebność: $size")
         }
         return windows
+    }
+    private fun similarityTimeVal(time1: Long, time2: Long): Long{
+        return abs(time1- time2)
     }
     private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{
         return abs(time1- time2) < threshold

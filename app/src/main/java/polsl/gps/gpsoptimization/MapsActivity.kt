@@ -135,7 +135,7 @@ class MapsActivity : FragmentActivity(), OnMapReadyCallback {
                     accY,
                     0.01,
                     trueLats,
-                    trueLongs, times, 3.0f, accuracies, azimuths)
+                    trueLongs, times, 16.5f, accuracies, azimuths)
                 gpsKF.smoothAndEvaluateAndGroup()
                 smoothedLatLngList=gpsKF.getCorrectedLatLngList()
                 groups = gpsKF.getGroups()
