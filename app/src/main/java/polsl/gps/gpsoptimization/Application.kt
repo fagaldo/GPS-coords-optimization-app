@@ -25,7 +25,6 @@ class Application : android.app.Application() {
     }
     private fun loadData()
     {
-        Log.d("ładuje", "xd")
         val sharedPreferences: SharedPreferences = getSharedPreferences("waypoints", MODE_PRIVATE)
         val emptyList = Gson().toJson(ArrayList<String>())
         val json = sharedPreferences.getString("waypoints", emptyList)
@@ -82,25 +81,18 @@ class Application : android.app.Application() {
         if (latitude != null && longitude != null && accuracy != null && x != null && y != null &&
             time != null && z != null && altitude != null && azimuth != null) {
 
-            println("Latitude: $latitude")
             location.latitude = latitude
-            println("Longitude: $longitude")
             location.longitude = longitude
-            println("Accuracy: $accuracy")
             location.accuracy = accuracy.toFloat()
-            Log.d("speed x", "$x")
             location.accelerationX = x
-            Log.d("speed y", "$y")
             location.accelerationY = y
             location.accelerationZ = z
             location.time = time
             location.altitude = altitude
             location.azimuth = azimuth
             location.accelerationZ = z
-            println(location)
 
         }
-        //Log.d("Zwracam lokacje", location.toString())
         return location
     }
 

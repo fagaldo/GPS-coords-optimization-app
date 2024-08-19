@@ -10,15 +10,13 @@ class GPSMovingAvgFuzzySmoothing(
     private val latitudes: DoubleArray,
     private val longitudes: DoubleArray,
     private val threshold: Double,
-    private val trueLatitudes: DoubleArray,
-    private val trueLongitudes: DoubleArray, private val timeStamps: MutableList<Long>
+    private val timeStamps: MutableList<Long>
 ) {
     private val smoothedLatitudes = DoubleArray(latitudes.size)
     private val smoothedLongitudes = DoubleArray(longitudes.size)
-    private val errors = DoubleArray(latitudes.size)
     private val groups = mutableMapOf<Int, MutableList<Int>>()
     private var groupIndexMap = mutableMapOf<Int, Int>()
-    private var maxGroupSize: Int = 6
+    private var maxGroupSize: Int = 10
 
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
@@ -28,7 +26,6 @@ class GPSMovingAvgFuzzySmoothing(
             smoothedLatitudes[i] = smoothedCoordinate.first
             smoothedLongitudes[i] = smoothedCoordinate.second
             val groupId = groupIndexMap[i]
-            errors[i] = calculateMAE(smoothedCoordinate.first, smoothedCoordinate.second, groupId)
             if (groupId != null) {
                 groups.computeIfAbsent(groupId) { mutableListOf() }.add(i)
             }
@@ -41,7 +38,6 @@ class GPSMovingAvgFuzzySmoothing(
         val ungroupedIndexes = mutableListOf<Int>()
         var incrementRate = 0.001
         var incrementTimeRate: Long = 10
-
         var currentGroupIndex = 0
         val groupSizes = mutableMapOf<Int, Int>()
 
@@ -92,7 +88,7 @@ class GPSMovingAvgFuzzySmoothing(
         var oldDiff = diff
         var timeDiff:Long = 2000
         var oldTimeDiff = timeDiff
-        var iteracja = 0
+        var iteration = 0
         while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
@@ -105,7 +101,7 @@ class GPSMovingAvgFuzzySmoothing(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if(iteracja % 1000 == 0)
+                    if(iteration % 1000 == 0)
                         maxGroupSize++
                     var group: Int? = null
                     for(tmp1 in indexesInWindows)
@@ -160,7 +156,7 @@ class GPSMovingAvgFuzzySmoothing(
                     incrementTimeRate = 100
                 }
             }
-            iteracja ++
+            iteration ++
             incrementRate += 0.001
             incrementTimeRate += 100
 
@@ -181,10 +177,6 @@ class GPSMovingAvgFuzzySmoothing(
     lat2: Double, lon2: Double
     ): Double
     {
-//        val latDiff = lat1 - lat2
-//        val lonDiff = lon1 - lon2
-//        val distanceSquared = latDiff * latDiff + lonDiff * lonDiff
-//        return sqrt(distanceSquared)
         val R = 6371.0 // Średni promień Ziemi w kilometrach
 
         val dLat = Math.toRadians(lat2 - lat1)
@@ -204,10 +196,6 @@ class GPSMovingAvgFuzzySmoothing(
         lat2: Double, lon2: Double,
         threshold: Double
     ): Boolean {
-//        val latDiff = lat1 - lat2
-//        val lonDiff = lon1 - lon2
-//        val distanceSquared = latDiff * latDiff + lonDiff * lonDiff
-//        return distanceSquared < threshold * threshold
         val R = 6371.0 // Średni promień Ziemi w kilometrach
 
         val dLat = Math.toRadians(lat2 - lat1)
@@ -216,13 +204,9 @@ class GPSMovingAvgFuzzySmoothing(
                 cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
                 sin(dLon / 2) * sin(dLon / 2)
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-        Log.d("Odleglosc: ", "Między $lat1, $lat2" +"  "+ (R * c).toString())
-
         return R * c < threshold
     }
     private fun membershipFunction(x: Double, y: Double, s: Double, r: Double, a: Double, b: Double): Double {
-        //return exp(-((x - s) / 0.01*a).pow(2) - ((y - r) / 0.01*b).pow(2)) //tutaj można się pobawić z tymi wagami
         if (a == 0.0|| b == 0.0)
             return 1.0
         val distanceX = abs(x - s)
@@ -264,21 +248,9 @@ class GPSMovingAvgFuzzySmoothing(
         return Pair(maxDistanceLat, maxDistanceLon)
     }
     private fun calculateDistance(lat1: Double, lat2: Double, lon1: Double, lon2:Double): Pair<Double, Double> {
-        //val earthRadius = 6371000.0 // Radius of the Earth in meters
-
         val dLat = abs(lat2 - lat1)
         val dLon = abs(lon2 - lon1)
-
-        //val a = sin(dLat / 2).pow(2) + cos(lat1) * cos(lat2) * sin(dLon / 2).pow(2)
-        //val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-        //val distance = earthRadius * c * 100 // Convert distance to centimeters
-
-        //val latDistance = distance * cos(lat1) // Distance on latitude in centimeters
-        //val lonDistance = distance // Distance on longitude in centimeters
-        Log.d("zwracam odległość", "$dLat $dLon")
         return Pair(dLat, dLon)
-
     }
     private fun movingFuzzyAverage(index: Int): Pair<Double, Double>{
         var sumLat = 0.0
@@ -302,7 +274,6 @@ class GPSMovingAvgFuzzySmoothing(
         }
         val smoothedLatitude = sumLat / weightSum
         val smoothedLongitude = sumLon / weightSum
-        Log.d("koord:", "$smoothedLatitude" + " $smoothedLongitude" +" $index")
         return Pair(smoothedLatitude, smoothedLongitude)
     }
 
@@ -318,20 +289,5 @@ class GPSMovingAvgFuzzySmoothing(
 
     fun getGroups(): Map<Int, List<Int>> {
         return groups
-    }
-
-    private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
-        if (index != null && index >= 0 && index < trueLatitudes.size && index < trueLongitudes.size) {
-            val trueLatitude = trueLatitudes[index]
-            val trueLongitude = trueLongitudes[index]
-            return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
-        } else {
-            Log.d("Index", "Invalid index: $index")
-            // Możesz zwrócić wartość domyślną lub NaN lub wykonać inne działania w przypadku błędnego indeksu
-            return Double.NaN // NaN oznacza "Not a Number"
-        }
-    }
-    fun getMAE(): DoubleArray {
-        return errors
     }
 }

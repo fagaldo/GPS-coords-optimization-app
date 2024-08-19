@@ -8,8 +8,7 @@ import kotlin.math.*
 class GpsKalmanPostProcessing(
     private val latitudes: DoubleArray, private val longitudes: DoubleArray,
     private val accelerationsX: MutableList<Double>, private val accelerationsY: MutableList<Double>,
-    private val threshold: Double, private val trueLatitudes: DoubleArray,
-    private val trueLongitudes: DoubleArray, private val timeStamps: MutableList<Long>,
+    private val threshold: Double, private val timeStamps: MutableList<Long>,
     private val Q_metres_per_second: Float, private val accuracies: MutableList<Float>,
     private val azimuths: MutableList<Float>
 ) {
@@ -21,12 +20,11 @@ class GpsKalmanPostProcessing(
     private val correctedLatitudes = DoubleArray(latitudes.size)
     private val correctedLongitudes = DoubleArray(longitudes.size)
     private val groups = mutableMapOf<Int, MutableList<Int>>()
-    private val errors = DoubleArray(latitudes.size)
     private var groupIndexMap = mutableMapOf<Int, Int>()
     private var prevAccX: Double = 0.0
     private var prevAccY: Double = 0.0
     private var velocityVariance = 1.0 // Initial variance
-    private var maxGroupSize: Int = 6
+    private var maxGroupSize: Int = 10
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
         createWindows(1000)
@@ -36,34 +34,11 @@ class GpsKalmanPostProcessing(
             correctedLatitudes[i] = correctedCoordinate.first
             correctedLongitudes[i] = correctedCoordinate.second
             val groupId = groupIndexMap[i]
-            //errors[i] = calculateMAE(smoothedCoordinate.first, smoothedCoordinate.second, groupId)
             if (groupId != null) {
                 groups.computeIfAbsent(groupId) { mutableListOf() }.add(i)
             }
         }
     }
-/*    fun get_TimeStamp(): Long {
-        return TimeStamp_milliseconds
-    }
-
-    fun get_lat(): Double {
-        return lat
-    }
-
-    fun get_lng(): Double {
-        return lng
-    }
-
-    fun get_accuracy(): Float {
-        return kotlin.math.sqrt(variance.toDouble()).toFloat()
-    }
-    fun SetState(lat: Double, lng: Double, accuracy: Float, TimeStamp_milliseconds: Long) {
-        this.lat = lat
-        this.lng = lng
-        variance = accuracy * accuracy
-        this.TimeStamp_milliseconds = TimeStamp_milliseconds
-    }*/
-
     /**
      * Kalman filter processing for latitude and longitude
      * @param lat_measurement new measurement of latitude
@@ -100,8 +75,6 @@ class GpsKalmanPostProcessing(
                 // time has moved on, so the uncertainty in the current position increases
                 variance += timeIncMilliseconds * Q_metres_per_second * Q_metres_per_second / 1000
                 this.TimeStamp_milliseconds = TimeStamp_milliseconds
-                // TO DO: USE VELOCITY INFORMATION HERE TO GET A BETTER ESTIMATE OF CURRENT POSITION
-
                 // Obliczanie przyspieszenia na podstawie danych z akcelerometru
                 val dtSeconds = timeIncMilliseconds / 1000.0 // Czas w sekundach
                 // Obliczanie prędkości na podstawie poprzedniego i aktualnego przyspieszenia
@@ -134,30 +107,6 @@ class GpsKalmanPostProcessing(
         Log.d("Zwracane z kalmana", "lat: $lat long: $lng")
         return Pair(lat, lng)
     }
-    // Funkcja do obliczania przyspieszenia na podstawie danych z akcelerometru
-    /*fun calculateAcceleration(
-        accelerationData: List<Triple<Double, Double, Double>>, // Lista odczytów przyspieszenia dla każdej osi (x, y, z)
-        timeStamps: List<Long> // Lista znaczników czasowych odpowiadających każdemu odczytowi
-    ): List<Triple<Double, Double, Double>> {
-        val accelerations = mutableListOf<Triple<Double, Double, Double>>()
-
-        for (i in 1 until accelerationData.size) {
-            val (x1, y1, z1) = accelerationData[i - 1]
-            val (x2, y2, z2) = accelerationData[i]
-
-            val t1 = timeStamps[i - 1].toDouble()
-            val t2 = timeStamps[i].toDouble()
-
-            val accelerationX = (x2 - x1) / (t2 - t1)
-            val accelerationY = (y2 - y1) / (t2 - t1)
-            val accelerationZ = (z2 - z1) / (t2 - t1)
-
-            accelerations.add(Triple(accelerationX, accelerationY, accelerationZ))
-        }
-
-        return accelerations
-    }*/
-
     private fun createWindows(timeThreshold: Long): List<Int> {
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
@@ -215,7 +164,7 @@ class GpsKalmanPostProcessing(
         var oldDiff = diff
         var timeDiff:Long = 2000
         var oldTimeDiff = timeDiff
-        var iteracja = 0
+        var iteration = 0
         while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
@@ -228,7 +177,7 @@ class GpsKalmanPostProcessing(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if(iteracja % 1000 == 0)
+                    if(iteration % 1000 == 0)
                         maxGroupSize++
                     var group: Int? = null
                     for(tmp1 in indexesInWindows)
@@ -283,7 +232,7 @@ class GpsKalmanPostProcessing(
                     incrementTimeRate = 100
                 }
             }
-            iteracja ++
+            iteration ++
             incrementRate += 0.001
             incrementTimeRate += 100
 
@@ -336,25 +285,6 @@ class GpsKalmanPostProcessing(
     fun getGroups(): Map<Int, List<Int>> {
         return groups
     }
-    fun getMAE(): DoubleArray {
-        return errors
-    }
-    private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
-        if (index != null && index >= 0 && index < trueLatitudes.size && index < trueLongitudes.size) {
-            val trueLatitude = trueLatitudes[index]
-            val trueLongitude = trueLongitudes[index]
-            return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
-        } else {
-            Log.d("Index", "Invalid index: $index")
-            // Możesz zwrócić wartość domyślną lub NaN lub wykonać inne działania w przypadku błędnego indeksu
-            return Double.NaN // NaN oznacza "Not a Number"
-        }
-    }
-
-    //    private fun isSignificantChange(accelerationX: Double, accelerationY: Double): Boolean {
-//        val totalAcceleration = kotlin.math.sqrt(accelerationX.pow(2) + accelerationY.pow(2))
-//        return totalAcceleration > threshold
-//    }
     fun getCorrectedLatLngList(): List<LatLng> {
         val correctedLatLngList = mutableListOf<LatLng>()
         for (i in correctedLatitudes.indices) {

@@ -17,8 +17,8 @@ import android.widget.*
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.app.ActivityCompat.requestPermissions
 import com.google.android.gms.location.*
-import java.util.*
 import kotlin.collections.ArrayList
 
 
@@ -72,12 +72,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationRequest: LocationRequest
     //Location request is a config file for all settings related to FusedLocationProviderClient
     private val handler = Handler(Looper.getMainLooper())
-    private val delay: Long = 1000 // opóźnienie w milisekundach (5 sekund)
+    private val delay: Long = 2000 // opóźnienie w milisekundach (5 sekund)
 
     private val runnable = object : Runnable {
         override fun run() {
-            // Tutaj umieść kod, który ma być wykonany co określoną liczbę sekund
-            // Na przykład:
             if(updateOn)
                 updateGPS()
             Log.d("delay", "1.5s")
@@ -139,10 +137,6 @@ class MainActivity : AppCompatActivity() {
         )
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
-        //set all properties of LocatonRequest
-        //locationRequest.setInterval(1000 * DEFAULT_UPDATE_INTERVAL);
-        //locationRequest.setFastestInterval(100 * DEFAULT_FAST_UPDATE_INTERVAL)
-       // locationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY)
 
         locationCallBack = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
@@ -188,7 +182,6 @@ class MainActivity : AppCompatActivity() {
         btn_newWayPoint.setOnClickListener(View.OnClickListener { //add the new location to the global list
 
             val application = applicationContext as polsl.gps.gpsoptimization.Application
-            //savedLocations = application.getLocations()
 
             savedLocations.add(myCurrLocation)
             application.setLocations(savedLocations as ArrayList<MyLocation>)
@@ -219,13 +212,10 @@ class MainActivity : AppCompatActivity() {
                 x = event.values[0].toDouble()
                 y = event.values[1].toDouble()
                 z = event.values[2].toDouble()
-                //updateGPS()
                 accelerometerValues = event.values.clone()
             }
         }
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-            // Metoda wywoływana, gdy dokładność sensora ulegnie zmianie
-        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
     private val magnetometerListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
@@ -233,10 +223,7 @@ class MainActivity : AppCompatActivity() {
                 magnetometerValues = event.values.clone()
             }
         }
-
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-            // Obsłuż zmianę dokładności sensora, jeśli to konieczne
-        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
     private val gyroscopeListener = object : SensorEventListener {
@@ -264,9 +251,7 @@ class MainActivity : AppCompatActivity() {
                 else{Log.d("null", "null")}
             }
         }
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-            // Obsłuż zmianę dokładności sensora, jeśli to konieczne
-        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
     private fun startLocationUpdates() {

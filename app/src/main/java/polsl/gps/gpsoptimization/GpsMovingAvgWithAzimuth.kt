@@ -8,16 +8,14 @@ import kotlin.math.*
 
 class GpsMovingAvgWithAzimuth(
     private val latitudes: DoubleArray, private val longitudes: DoubleArray,
-    private val threshold: Double, private val trueLatitudes: DoubleArray,
-    private val trueLongitudes: DoubleArray, private val timeStamps: MutableList<Long>,
+    private val threshold: Double, private val timeStamps: MutableList<Long>,
     private val azimuths: MutableList<Float>
 ) {
     private val smoothedLatitudes = DoubleArray(latitudes.size)
     private val smoothedLongitudes = DoubleArray(longitudes.size)
-    private val errors = DoubleArray(latitudes.size)
     private val groups = mutableMapOf<Int, MutableList<Int>>()
     private var groupIndexMap = mutableMapOf<Int, Int>()
-    private var maxGroupSize: Int = 6
+    private var maxGroupSize: Int = 10
 
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
@@ -27,7 +25,6 @@ class GpsMovingAvgWithAzimuth(
             smoothedLatitudes[i] = smoothedCoordinate.first
             smoothedLongitudes[i] = smoothedCoordinate.second
             val groupId = groupIndexMap[i]
-            errors[i] = calculateMAE(smoothedCoordinate.first, smoothedCoordinate.second, groupId)
             if (groupId != null) {
                 groups.computeIfAbsent(groupId) { mutableListOf() }.add(i)
             }
@@ -90,7 +87,7 @@ class GpsMovingAvgWithAzimuth(
         var oldDiff = diff
         var timeDiff:Long = 2000
         var oldTimeDiff = timeDiff
-        var iteracja = 0
+        var iteration = 0
         while (ungroupedIndexes.isNotEmpty()) {
             Log.d("Oprozniamy", ungroupedIndexes.toString())
             Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
@@ -103,7 +100,7 @@ class GpsMovingAvgWithAzimuth(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if(iteracja % 1000 == 0)
+                    if(iteration % 1000 == 0)
                         maxGroupSize++
                     var group: Int? = null
                     for(tmp1 in indexesInWindows)
@@ -158,7 +155,7 @@ class GpsMovingAvgWithAzimuth(
                     incrementTimeRate = 100
                 }
             }
-            iteracja ++
+            iteration ++
             incrementRate += 0.001
             incrementTimeRate += 100
 
@@ -173,7 +170,6 @@ class GpsMovingAvgWithAzimuth(
     private fun similarityTimeVal(time1: Long, time2: Long): Long{
         return abs(time1- time2)
     }
-
 
     private fun movingAverage(index: Int): Pair<Double, Double> {
         var weightedSumLat = 0.0
@@ -201,16 +197,27 @@ class GpsMovingAvgWithAzimuth(
         for ((i, group) in groupIndexMap) {
             if (group == groupToIterate) {
                 angleDifference = if(i == latitudes.size - 1)
-                    abs(calculateAngleDifference(azimuths[i], azimuths[i-1]))
+                    calculateAngleDifference(azimuths[i], azimuths[i-1])
                 else
-                    abs(calculateAngleDifference(azimuths[i], azimuths[i+1]))
+                    calculateAngleDifference(azimuths[i], azimuths[i+1])
+                if(angleDifference >= 0.99)
+                    angleDifference /= 2
                 weights[i] = angleDifference.toDouble() // Użyj różnicy kątów jako wagi
             }
         }
-        // Normalize weights to sum to 1
         val sumWeights = weights.sum()
+        Log.d("sum", "sumWeight: $sumWeights")
         for (i in weights.indices) {
             weights[i] /= sumWeights
+            if(groupToIterate == 2) {
+                Log.d("angle", " weights: ${weights[i]}")
+                Log.d("grp", "weiGroup: $groupToIterate")
+            }
+            if(weights[i] >= 0.99) {
+                weights[i] = weights[i].div(500)
+                Log.d("zb", "Zbiłem do ${weights[i]}")
+            }
+
         }
         return weights
     }
@@ -266,20 +273,5 @@ class GpsMovingAvgWithAzimuth(
 
     fun getGroups(): Map<Int, List<Int>> {
         return groups
-    }
-
-    private fun calculateMAE(smoothedLatitude: Double, smoothedLongitude: Double, index: Int?): Double {
-        if (index != null && index >= 0 && index < trueLatitudes.size && index < trueLongitudes.size) {
-            val trueLatitude = trueLatitudes[index]
-            val trueLongitude = trueLongitudes[index]
-            return Math.abs(smoothedLatitude - trueLatitude) + Math.abs(smoothedLongitude - trueLongitude)
-        } else {
-            Log.d("Index", "Invalid index: $index")
-            // Możesz zwrócić wartość domyślną lub NaN lub wykonać inne działania w przypadku błędnego indeksu
-            return Double.NaN // NaN oznacza "Not a Number"
-        }
-    }
-    fun getMAE(): DoubleArray {
-        return errors
     }
 }
