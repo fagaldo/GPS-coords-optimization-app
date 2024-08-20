@@ -1,36 +1,112 @@
 package polsl.gps.gpsoptimization
+
 import android.os.Build
-import android.util.Log
 import androidx.annotation.RequiresApi
 import com.google.android.gms.maps.model.LatLng
 import kotlin.math.*
 
+/**
+ * Klasa GpsKalmanPostProcessing implementuje przetwarzanie danych GPS z wykorzystaniem filtru Kalmana.
+ * Odpowiedzialna za poprawianie pozycji GPS oraz grupowanie punktów na podstawie podobieństwa.
+ *
+ * @param latitudes Tablica szerokości geograficznych.
+ * @param longitudes Tablica długości geograficznych.
+ * @param accelerationsX Lista wartości przyspieszenia w osi X.
+ * @param accelerationsY Lista wartości przyspieszenia w osi Y.
+ * @param threshold Próg podobieństwa geograficznego do grupowania punktów.
+ * @param timeStamps Lista znaczników czasowych dla każdej lokalizacji.
+ * @param Q_metres_per_second Szum procesu modelowanego w filtrze Kalmana.
+ * @param accuracies Lista dokładności pomiarów GPS.
+ * @param azimuths Lista wartości azymutu (kierunku).
+ */
 class GpsKalmanPostProcessing(
-    private val latitudes: DoubleArray, private val longitudes: DoubleArray,
-    private val accelerationsX: MutableList<Double>, private val accelerationsY: MutableList<Double>,
-    private val threshold: Double, private val timeStamps: MutableList<Long>,
-    private val Q_metres_per_second: Float, private val accuracies: MutableList<Float>,
+    private val latitudes: DoubleArray,
+    private val longitudes: DoubleArray,
+    private val accelerationsX: MutableList<Double>,
+    private val accelerationsY: MutableList<Double>,
+    private val threshold: Double,
+    private val timeStamps: MutableList<Long>,
+    private val Q_metres_per_second: Float,
+    private val accuracies: MutableList<Float>,
     private val azimuths: MutableList<Float>
 ) {
+    /**
+     * Minimalna dokładność GPS.
+     */
     private val MinAccuracy = 1f
+
+    /**
+     * Aktualny znacznik czasu w milisekundach.
+     */
     private var TimeStamp_milliseconds: Long = 0
+
+    /**
+     * Aktualne wartości szerokości i długości geograficznej.
+     */
     private var lat = 0.0
     private var lng = 0.0
-    private var variance = -1f // P matrix.  Negative means object uninitialised.  NB: units irrelevant, as long as same units used throughout
+
+    /**
+     * Wariancja filtru Kalmana (macierz P).
+     */
+    private var variance = -1f
+
+    /**
+     * Poprawione szerokości geograficzne.
+     */
     private val correctedLatitudes = DoubleArray(latitudes.size)
+
+    /**
+     * Poprawione długości geograficzne.
+     */
     private val correctedLongitudes = DoubleArray(longitudes.size)
+
+    /**
+     * Grupy punktów podobnych.
+     */
     private val groups = mutableMapOf<Int, MutableList<Int>>()
+
+    /**
+     * Mapa indeksów grup.
+     */
     private var groupIndexMap = mutableMapOf<Int, Int>()
+
+    /**
+     * Wartości poprzednich przyspieszeń w osi X.
+     */
     private var prevAccX: Double = 0.0
+
+    /**
+     * Wartości poprzednich przyspieszeń w osi Y.
+     */
     private var prevAccY: Double = 0.0
-    private var velocityVariance = 1.0 // Initial variance
+
+    /**
+     * Wariancja prędkości.
+     */
+    private var velocityVariance = 1.0
+
+    /**
+     * Maksymalny rozmiar grupy.
+     */
     private var maxGroupSize: Int = 10
+
+    /**
+     * Wykonuje wygładzanie i ocenę pozycji GPS oraz grupowanie punktów.
+     */
     @RequiresApi(Build.VERSION_CODES.N)
     fun smoothAndEvaluateAndGroup() {
         createWindows(1000)
         for (i in latitudes.indices) {
-            val correctedCoordinate = process(latitudes[i], longitudes[i], accuracies[i], timeStamps[i],
-                accelerationsX[i], accelerationsY[i], azimuths[i])
+            val correctedCoordinate = process(
+                latitudes[i],
+                longitudes[i],
+                accuracies[i],
+                timeStamps[i],
+                accelerationsX[i],
+                accelerationsY[i],
+                azimuths[i]
+            )
             correctedLatitudes[i] = correctedCoordinate.first
             correctedLongitudes[i] = correctedCoordinate.second
             val groupId = groupIndexMap[i]
@@ -39,26 +115,35 @@ class GpsKalmanPostProcessing(
             }
         }
     }
+
     /**
-     * Kalman filter processing for latitude and longitude
-     * @param lat_measurement new measurement of latitude
-     * @param lng_measurement new measurement of longitude
-     * @param accuracy measurement of 1 standard deviation error in metres
-     * @param TimeStamp_milliseconds time of measurement
-     * @return new state
+     * Przetwarza dane GPS z wykorzystaniem filtru Kalmana.
+     *
+     * @param lat_measurement Nowy pomiar szerokości geograficznej.
+     * @param lng_measurement Nowy pomiar długości geograficznej.
+     * @param accuracy Dokładność pomiaru.
+     * @param TimeStamp_milliseconds Znacznik czasu pomiaru.
+     * @param acceleration_x Przyspieszenie w osi X.
+     * @param acceleration_y Przyspieszenie w osi Y.
+     * @param azimuth Azymut (kierunek).
+     * @return Zaktualizowana pozycja GPS jako para (szerokość, długość).
      */
-    private fun process(lat_measurement: Double, lng_measurement: Double, accuracy: Float,
-                        TimeStamp_milliseconds: Long, acceleration_x: Double, acceleration_y: Double,
-                        azimuth: Float)
-    :Pair<Double, Double>
-    {
+    private fun process(
+        lat_measurement: Double,
+        lng_measurement: Double,
+        accuracy: Float,
+        TimeStamp_milliseconds: Long,
+        acceleration_x: Double,
+        acceleration_y: Double,
+        azimuth: Float
+    ): Pair<Double, Double> {
         var velocity_lat = 0.0
         var velocity_lng = 0.0
 
         var accuracy = accuracy
         if (accuracy < MinAccuracy) accuracy = MinAccuracy
         if (variance < 0) {
-            // if variance < 0, object is uninitialised, so initialise with current values
+            // Inicjalizacja obiektu, jeśli wariancja jest mniejsza od 0
             this.TimeStamp_milliseconds = TimeStamp_milliseconds
             lat = lat_measurement
             lng = lng_measurement
@@ -66,18 +151,15 @@ class GpsKalmanPostProcessing(
             velocityVariance = variance.toDouble()
             prevAccX = acceleration_x
             prevAccY = acceleration_y
-
-
         } else {
-            // else apply Kalman filter methodology
+            // Zastosowanie metodologii filtru Kalmana
             val timeIncMilliseconds = TimeStamp_milliseconds - this.TimeStamp_milliseconds
             if (timeIncMilliseconds > 0) {
-                // time has moved on, so the uncertainty in the current position increases
+                // Zwiększenie niepewności pozycji w czasie
                 variance += timeIncMilliseconds * Q_metres_per_second * Q_metres_per_second / 1000
                 this.TimeStamp_milliseconds = TimeStamp_milliseconds
-                // Obliczanie przyspieszenia na podstawie danych z akcelerometru
-                val dtSeconds = timeIncMilliseconds / 1000.0 // Czas w sekundach
-                // Obliczanie prędkości na podstawie poprzedniego i aktualnego przyspieszenia
+                val dtSeconds = timeIncMilliseconds / 1000.0
+
                 velocity_lat += (prevAccX + acceleration_x) / 2 * dtSeconds
                 velocity_lng += (prevAccY + acceleration_y) / 2 * dtSeconds
                 prevAccX = acceleration_x
@@ -85,44 +167,46 @@ class GpsKalmanPostProcessing(
                 val metersPerDegree = 111_000
                 val azimuthRadians = Math.toRadians(azimuth.toDouble())
 
-                // Konwersja prędkości w m/s na zmianę stopni na sekundę
-                val delta_lat = (velocity_lat / metersPerDegree) / 3600.0 // Prędkość w metrach na sekundę dzielona przez metry na stopień, a następnie przez 3600 sekund w godzinie
-                val delta_lng = (velocity_lng / (metersPerDegree * Math.cos(Math.toRadians(lat))))/ 3600.0
-                // Przesunięcie kierunku ruchu w oparciu o azymut
+                val delta_lat = (velocity_lat / metersPerDegree) / 3600.0
+                val delta_lng = (velocity_lng / (metersPerDegree * Math.cos(Math.toRadians(lat)))) / 3600.0
+
                 val adjustedDeltaLat = delta_lat * cos(azimuthRadians) - delta_lng * Math.sin(azimuthRadians)
                 val adjustedDeltaLng = delta_lat * Math.sin(azimuthRadians) + delta_lng * Math.cos(azimuthRadians)
-                // Prędkość w metrach na sekundę, uwzględniając kosinus szerokości geograficznej
+
                 lat += adjustedDeltaLat
                 lng += adjustedDeltaLng
             }
-            // Kalman gain matrix K = Covarariance * Inverse(Covariance + MeasurementVariance)
-            // NB: because K is dimensionless, it doesn't matter that variance has different units to lat and lng
+
             val K = variance / (variance + accuracy * accuracy)
-            // apply K
+
             lat += K * (lat_measurement - lat)
             lng += K * (lng_measurement - lng)
-            // new Covarariance  matrix is (IdentityMatrix - K) * Covarariance
+
             variance *= (1 - K)
         }
-        Log.d("Zwracane z kalmana", "lat: $lat long: $lng")
         return Pair(lat, lng)
     }
+
+    /**
+     * Tworzy okna czasowe do grupowania punktów na podstawie ich podobieństwa.
+     *
+     * @param timeThreshold Próg czasowy dla grupowania.
+     * @return Lista identyfikatorów okien.
+     */
     private fun createWindows(timeThreshold: Long): List<Int> {
         val windows = mutableListOf<Int>()
         val indexesInWindows = mutableListOf<Int>()
         val ungroupedIndexes = mutableListOf<Int>()
+
         var incrementRate = 0.001
         var incrementTimeRate: Long = 10
-
         var currentGroupIndex = 0
         val groupSizes = mutableMapOf<Int, Int>()
 
         for (i in 0 until latitudes.size) {
             for (j in 0 until latitudes.size) {
-                Log.d("Porownanie", "Porownuje i: $i z j: $j")
                 if (i != j && isSimilar(latitudes[i], longitudes[i], latitudes[j], longitudes[j], threshold)
                     && isSimilarTime(timeStamps[i], timeStamps[j], 3000)) {
-                    Log.d("Podobienstwo", "Znaleziona podobna para: ($i, $j)")
 
                     val groupI = groupIndexMap[i]
                     val groupJ = groupIndexMap[j]
@@ -134,41 +218,33 @@ class GpsKalmanPostProcessing(
                         indexesInWindows.add(j)
                         windows.add(currentGroupIndex)
                         groupSizes[currentGroupIndex] = 2
-                        Log.d("Tworze grupe", "Index: $i, $j, Grupa: $currentGroupIndex")
                         currentGroupIndex++
                     } else if (groupI != null && groupJ == null) {
                         if (groupSizes[groupI]!! < maxGroupSize) {
                             groupIndexMap[j] = groupI
                             indexesInWindows.add(j)
                             groupSizes[groupI] = groupSizes[groupI]!! + 1
-                            Log.d("Dodaje do grupy", "Index: $j, Grupa: $groupI")
                         }
                     } else if (groupI == null && groupJ != null) {
                         if (groupSizes[groupJ]!! < maxGroupSize) {
                             groupIndexMap[i] = groupJ
                             indexesInWindows.add(i)
                             groupSizes[groupJ] = groupSizes[groupJ]!! + 1
-                            Log.d("Dodaje do grupy", "Index: $i, Grupa: $groupJ")
                         }
-                    } else {
-                        Log.d("Oba punkty w grupach", "Index: $i, Grupa: $groupI, Index: $j, Grupa: $groupJ")
                     }
                 }
             }
         }
 
         ungroupedIndexes.addAll((latitudes.indices).filter { !indexesInWindows.contains(it) })
-        Log.d("Nieprzypisane indeksy", ungroupedIndexes.toString())
 
         var diff = 5.0
         var oldDiff = diff
-        var timeDiff:Long = 2000
+        var timeDiff: Long = 2000
         var oldTimeDiff = timeDiff
         var iteration = 0
-        while (ungroupedIndexes.isNotEmpty()) {
-            Log.d("Oprozniamy", ungroupedIndexes.toString())
-            Log.d("Time thresh", (timeThreshold + incrementTimeRate).toString())
 
+        while (ungroupedIndexes.isNotEmpty()) {
             val iterator = ungroupedIndexes.iterator()
             val foundIndex = mutableListOf<Int>()
 
@@ -177,20 +253,17 @@ class GpsKalmanPostProcessing(
                 var isAssigned = false
 
                 for (tmp in indexesInWindows) {
-                    if(iteration % 1000 == 0)
+                    if (iteration % 1000 == 0)
                         maxGroupSize++
                     var group: Int? = null
-                    for(tmp1 in indexesInWindows)
-                    {
+                    for (tmp1 in indexesInWindows) {
                         diff = similarityVal(latitudes[itIndex], longitudes[itIndex], latitudes[tmp1], longitudes[tmp1])
-                        if(diff < oldDiff && groupSizes[groupIndexMap[tmp1]]!! < maxGroupSize) {
+                        if (diff < oldDiff && groupSizes[groupIndexMap[tmp1]]!! < maxGroupSize) {
                             oldDiff = diff
                             group = groupIndexMap[tmp1]
                         }
                     }
-                    Log.d("Obliczony diffG", oldDiff.toString())
                     if (group != null && groupSizes[group]!! < maxGroupSize) {
-                        Log.d("DorzucamG", "na podstawie geografii dla $itIndex do grupy $group")
                         groupIndexMap[itIndex] = group
                         indexesInWindows.add(itIndex)
                         foundIndex.add(itIndex)
@@ -201,17 +274,14 @@ class GpsKalmanPostProcessing(
                     }
 
                     if (!isAssigned) {
-                        for(tmp2 in indexesInWindows)
-                        {
+                        for (tmp2 in indexesInWindows) {
                             timeDiff = similarityTimeVal(timeStamps[itIndex], timeStamps[tmp2])
-                            if(timeDiff < oldTimeDiff && groupSizes[groupIndexMap[tmp2]]!! < maxGroupSize) {
+                            if (timeDiff < oldTimeDiff && groupSizes[groupIndexMap[tmp2]]!! < maxGroupSize) {
                                 oldTimeDiff = timeDiff
                                 group = groupIndexMap[tmp2]
                             }
                         }
-                        Log.d("Obliczony diffT", oldTimeDiff.toString())
                         if (group != null && (groupSizes[group]!! < maxGroupSize)) {
-                            Log.d("Dorzucam", "na podstawie czasu dla $itIndex do grupy $group granica czas była $oldTimeDiff")
                             groupIndexMap[itIndex] = group
                             indexesInWindows.add(itIndex)
                             foundIndex.add(itIndex)
@@ -227,29 +297,53 @@ class GpsKalmanPostProcessing(
 
                 oldDiff = 5.0
                 oldTimeDiff = 2000 + incrementTimeRate
-                if(oldTimeDiff > 10000) {
+                if (oldTimeDiff > 10000) {
                     oldTimeDiff = 2000
                     incrementTimeRate = 100
                 }
             }
-            iteration ++
+            iteration++
             incrementRate += 0.001
             incrementTimeRate += 100
-
-            Log.d("Aktualny incrementRate", incrementRate.toString())
-            Log.d("Aktualny incrementTime", incrementTimeRate.toString())
         }
         groupSizes.forEach { (group, size) ->
-            Log.d("Liczebność grupy", "Grupa: $group, Liczebność: $size")
         }
         return windows
     }
-    private fun similarityTimeVal(time1: Long, time2: Long): Long{
-        return abs(time1- time2)
+
+    /**
+     * Oblicza różnicę czasu między dwoma punktami.
+     *
+     * @param time1 Czas pierwszego punktu.
+     * @param time2 Czas drugiego punktu.
+     * @return Różnica czasu jako wartość Long.
+     */
+    private fun similarityTimeVal(time1: Long, time2: Long): Long {
+        return abs(time1 - time2)
     }
-    private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean{
-        return abs(time1- time2) < threshold
+
+    /**
+     * Sprawdza, czy dwa punkty GPS są podobne pod względem czasu.
+     *
+     * @param time1 Czas pierwszego punktu.
+     * @param time2 Czas drugiego punktu.
+     * @param threshold Próg podobieństwa czasowego.
+     * @return True, jeśli punkty są podobne pod względem czasu.
+     */
+    private fun isSimilarTime(time1: Long, time2: Long, threshold: Long): Boolean {
+        return abs(time1 - time2) < threshold
     }
+
+    /**
+     * Sprawdza, czy dwa punkty GPS są podobne pod względem współrzędnych.
+     *
+     * @param lat1 Szerokość geograficzna pierwszego punktu.
+     * @param lon1 Długość geograficzna pierwszego punktu.
+     * @param lat2 Szerokość geograficzna drugiego punktu.
+     * @param lon2 Długość geograficzna drugiego punktu.
+     * @param threshold Próg podobieństwa współrzędnych.
+     * @return True, jeśli punkty są podobne pod względem współrzędnych.
+     */
     private fun isSimilar(
         lat1: Double, lon1: Double,
         lat2: Double, lon2: Double,
@@ -266,11 +360,20 @@ class GpsKalmanPostProcessing(
 
         return R * c < threshold
     }
+
+    /**
+     * Oblicza odległość między dwoma punktami GPS.
+     *
+     * @param lat1 Szerokość geograficzna pierwszego punktu.
+     * @param lon1 Długość geograficzna pierwszego punktu.
+     * @param lat2 Szerokość geograficzna drugiego punktu.
+     * @param lon2 Długość geograficzna drugiego punktu.
+     * @return Odległość między punktami w kilometrach.
+     */
     private fun similarityVal(
         lat1: Double, lon1: Double,
         lat2: Double, lon2: Double
-    ): Double
-    {
+    ): Double {
         val R = 6371.0 // Średni promień Ziemi w kilometrach
 
         val dLat = Math.toRadians(lat2 - lat1)
@@ -282,9 +385,21 @@ class GpsKalmanPostProcessing(
 
         return R * c
     }
+
+    /**
+     * Zwraca mapę grup punktów GPS.
+     *
+     * @return Mapa grup punktów GPS.
+     */
     fun getGroups(): Map<Int, List<Int>> {
         return groups
     }
+
+    /**
+     * Zwraca listę poprawionych współrzędnych GPS.
+     *
+     * @return Lista poprawionych współrzędnych GPS jako obiekty LatLng.
+     */
     fun getCorrectedLatLngList(): List<LatLng> {
         val correctedLatLngList = mutableListOf<LatLng>()
         for (i in correctedLatitudes.indices) {
